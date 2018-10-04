@@ -55,10 +55,11 @@ function ctrl_c() {
 function sim() {
 	threads=$1
 	bench_type=$2
-	with_sim=$3
-	with_blif=$4
-	with_arch=$5
-	passing_args=$6
+	with_input_vector=$3
+	with_output_vector=$4
+	with_blif=$5
+	with_arch=$6
+	passing_args=$7
 	
 	benchmark_dir=regression_test/benchmark/${bench_type}
 
@@ -91,25 +92,35 @@ function sim() {
 			verilog_command=""
 			blif_command=""
 
-			verilog_command="./odin_II --adder_type default -V ${benchmark_dir}/${test_name}.v -o ${DIR}/odin.blif"
+			verilog_command="./odin_II --adder_type default -L reset -V ${benchmark_dir}/${test_name}.v -o ${DIR}/odin.blif"
 
 			[ "_$with_blif" == "_1" ] &&
-				blif_command=" && ./odin_II --adder_type default -b ${DIR}/odin.blif"
+				blif_command=" && ./odin_II --adder_type default -L reset -b ${DIR}/odin.blif"
 
 			[ "_$with_arch" == "_1" ] &&
 				verilog_command="${verilog_command} -a ../libs/libarchfpga/arch/sample_arch.xml"
 			
-			[ "_$with_blif" == "_1" ] && 
-			[ "_$with_arch" == "_1" ] &&
+			[ "_$with_blif" == "_1" ] && [ "_$with_arch" == "_1" ] &&
 				blif_command="${blif_command} -a ../libs/libarchfpga/arch/sample_arch.xml"
 
-			[ "_$with_sim" == "_1" ] &&
-				verilog_command="${verilog_command} -t ${benchmark_dir}/${test_name}_input -T ${benchmark_dir}/${test_name}_output"
+			if [ "_$with_input_vector" == "_1" ]; then
+				verilog_command="${verilog_command} -t ${benchmark_dir}/${test_name}_input"
 
-			[ "_$with_blif" == "_1" ] && 
-			[ "_$with_sim" == "_1" ] &&
-				blif_command="${blif_command} -t ${benchmark_dir}/${test_name}_input -T ${benchmark_dir}/${test_name}_output"
+				[ "_$with_blif" == "_1" ] &&
+					blif_command="${blif_command} -t ${benchmark_dir}/${test_name}_input"
+				
+				if [ "_$with_output_vector" == "_1" ]; then
+					verilog_command="${verilog_command} -T ${benchmark_dir}/${test_name}_output"
 
+					[ "_$with_blif" == "_1" ] &&
+						blif_command="${blif_command} -T ${benchmark_dir}/${test_name}_output"
+				fi
+			else
+				verilog_command="${verilog_command} -g 100"
+
+				[ "_$with_blif" == "_1" ] &&
+					blif_command="${blif_command} -g 100"
+			fi
 
 			verilog_command="${verilog_command} -sim_dir ${DIR}/ &>> ${DIR}/log"
 			
@@ -139,22 +150,26 @@ function sim() {
 function other_test() {
 	threads=$1
 	bench_type=other
-	with_sim=0
+	with_input_vector=0
+	with_output_vector=0
 	with_blif=0
 	with_arch=0
+	with_input_args=1
 
-	sim $threads $bench_type $with_sim $with_blif $with_arch 1
+	sim $threads $bench_type $with_input_vector $with_output_vector $with_blif $with_arch $with_input_args
 }
 
 
 function micro_test() {
 	threads=$1
 	bench_type=micro
-	with_sim=1
+	with_input_vector=1
+	with_output_vector=1
 	with_blif=1
 	with_arch=0
+	with_input_args=0
 
-	sim $threads $bench_type $with_sim $with_blif $with_arch 0
+	sim $threads $bench_type $with_input_vector $with_output_vector $with_blif $with_arch $with_input_args
 }
 
 #1
@@ -162,11 +177,13 @@ function micro_test() {
 function regression_test() {
 	threads=1
 	bench_type=full
-	with_sim=1
+	with_input_vector=1
+	with_output_vector=1
 	with_blif=0
 	with_arch=1
+	with_input_args=0
 
-	sim $threads $bench_type $with_sim $with_blif $with_arch 0
+	sim $threads $bench_type $with_input_vector $with_output_vector $with_blif $with_arch $with_input_args
 }
 
 
@@ -175,11 +192,13 @@ function regression_test() {
 function arch_test() {
 	threads=$1
 	bench_type=arch
-	with_sim=0
+	with_input_vector=0
+	with_output_vector=0
 	with_blif=0
 	with_arch=1
+	with_input_args=0
 
-	sim $threads $bench_type $with_sim $with_blif $with_arch 0
+	sim $threads $bench_type $with_input_vector $with_output_vector $with_blif $with_arch $with_input_args
 }
 
 #1				#2
@@ -187,16 +206,35 @@ function arch_test() {
 function syntax_test() {
 	threads=$1
 	bench_type=syntax
-	with_sim=0
+	with_input_vector=0
+	with_output_vector=0
+	with_blif=0
+	with_arch=0
+	with_input_args=0
+
+	sim $threads $bench_type $with_input_vector $with_output_vector $with_blif $with_arch $with_input_args
+}
+
+#1				#2
+#benchmark dir	N_trhead
+function functional_test() {
+	threads=$1
+	bench_type=functional
+	with_input_vector=1
+	with_output_vector=0
 	with_blif=0
 	with_arch=0
 
-	sim $threads $bench_type $with_sim $with_blif $with_arch 0
+	sim $threads $bench_type $with_input_vector $with_output_vector $with_blif $with_arch $with_input_args
 }
 
 START=$(date +%s%3N)
 
 case $1 in
+
+	"functional")
+		functional_test $NB_OF_PROC
+		;;
 
 	"arch")
 		arch_test $NB_OF_PROC

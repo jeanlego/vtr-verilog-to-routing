@@ -35,10 +35,13 @@ OTHER DEALINGS IN THE SOFTWARE.
 #include <unistd.h>
 #include <thread>
 
+#define CLOCK_INITIAL_VALUE 1
+
 #define get_values_offset(cycle)	(((cycle) + (SIM_WAVE_LENGTH)) % (SIM_WAVE_LENGTH))
 #define is_even_cycle(cycle)	(!((cycle + 2) % 2))
 #define is_clock_node(node)	( (node->type == CLOCK_NODE) || (std::string(node->name) == "top^clk") ) // Strictly for memories.
-#define is_posedge(pin, cycle) (get_pin_value(pin,cycle) == 1 && get_pin_value(pin,cycle-1) != 1)
+#define is_posedge(pin, cycle) (edge_type(pin, cycle) > 0)
+#define is_negedge(pin, cycle) (edge_type(pin, cycle) < 0)
 
 static void simulate_cycle(int cycle, stages_t *s);
 static stages_t *simulate_first_cycle(netlist_t *netlist, int cycle, lines_t *output_lines);
@@ -128,6 +131,8 @@ static void flag_undriven_input_pins(nnode_t *node);
 
 static void print_ancestry(nnode_t *node, int generations);
 static nnode_t *print_update_trace(nnode_t *bottom_node, int cycle);
+signed char edge_type(npin_t *pin, int cycle);
+
 
 double used_time;
 int number_of_workers;
@@ -515,7 +520,7 @@ static void simulate_cycle(int cycle, stages_t *s)
 		total_run_time += wall_time()-time;
 	}
 
-	s->avg_worker_count += (double)number_of_workers/(double)s->count;
+	s->avg_worker_count = (double)number_of_workers;
 
 	if(! found_best_time && global_args.parralelized_simulation.value() > 1)
 	{
@@ -1468,15 +1473,15 @@ nnode_t **get_children_of_nodepin(nnode_t *node, int *num_children, int output_p
  * and values so that the values don't have to be propagated
  * through the net.
  */
-static void initialize_pin(npin_t *pin)
+static inline char initialize_pin(npin_t *pin, int cycle)
 {
 	// Initialise the driver pin if this pin is not the driver.
 	if (pin->net && pin->net->driver_pin && pin->net->driver_pin != pin)
-		initialize_pin(pin->net->driver_pin);
+		initialize_pin(pin->net->driver_pin, cycle);
 
 	// If initialising the driver initialised this pin, we're OK to return.
 	if (pin->cycle || pin->values)
-		return;
+		return pin->values[cycle%SIM_WAVE_LENGTH];
 
 
 	if (pin->net)
@@ -1505,6 +1510,7 @@ static void initialize_pin(npin_t *pin)
 		SIM_WAVE_LENGTH
 	);
 	*(pin->cycle) = -1;
+	return pin->values[cycle%SIM_WAVE_LENGTH];
 }
 
 /*
@@ -1516,9 +1522,7 @@ static void initialize_pin(npin_t *pin)
 static void update_pin_value(npin_t *pin, signed char value, int cycle)
 {
 	init_write(pin);
-	if (pin->values == NULL)
-		initialize_pin(pin);
-	
+	initialize_pin(pin, cycle);	
 	pin->values[cycle%SIM_WAVE_LENGTH] = value;
 	*(pin->cycle) = cycle;
 	close_writer(pin);
@@ -1529,14 +1533,33 @@ static void update_pin_value(npin_t *pin, signed char value, int cycle)
  */
 signed char get_pin_value(npin_t *pin, int cycle)
 {
-	signed char to_return = (pin->node && pin->node->has_initial_value)? pin->node->initial_value: global_args.sim_initial_value;
-	if( pin->values )
+	signed char to_return = -1;
+	if(!pin)
+		return to_return;
+
+	if(cycle == 0 || !pin->values)
+	{
+		init_write(pin);
+		to_return = initialize_pin(pin, cycle);
+		close_writer(pin);
+	}
+	else
 	{
 		init_read(pin);
-		to_return = pin->values[cycle%SIM_WAVE_LENGTH];
-		close_reader(pin);
+	 	to_return = pin->values[cycle%SIM_WAVE_LENGTH];
+	 	close_reader(pin);
 	}
+
 	return to_return;
+}
+
+signed char edge_type(npin_t *pin, int cycle)
+{
+	init_read(pin);
+	signed char cur_value	= (cycle == 0)? !CLOCK_INITIAL_VALUE: 			pin->values[cycle%SIM_WAVE_LENGTH];
+	signed char prev_value	= (cycle == 0)? initialize_pin(pin, cycle): 	pin->values[(cycle-1)%SIM_WAVE_LENGTH];
+	close_reader(pin);
+	return cur_value - prev_value;
 }
 
 /*
@@ -1567,21 +1590,14 @@ static void compute_flipflop_node(nnode_t *node, int cycle)
 	npin_t *output_pin = node->output_pins[0];
 
 	// update the flip-flop from the input value of the previous cycle.
-	if (clock_pin->type == NEGEDGE)
-	{
-		if (is_posedge(clock_pin, cycle))
-			update_pin_value(output_pin, get_pin_value(output_pin,cycle-1), cycle);
-		else
-			update_pin_value(output_pin, get_pin_value(D_pin, cycle-1), cycle);
-	}
-	else // posedge
-	{
-		if (is_posedge(clock_pin, cycle))
-			update_pin_value(output_pin, get_pin_value(D_pin, cycle-1), cycle);
-		else
-			update_pin_value(output_pin, get_pin_value(output_pin,cycle-1), cycle);
-	}
+	
+	bool trigger =	(clock_pin->type == NEGEDGE)? is_negedge(clock_pin, cycle):
+					(clock_pin->type == POSEDGE)? is_posedge(clock_pin, cycle):
+					/*	fallback to posedge */    is_posedge(clock_pin, cycle);
+	
+	npin_t *update_pin_to = (trigger)?	D_pin:	output_pin;
 
+	update_pin_value(output_pin, get_pin_value(update_pin_to, cycle-1), cycle);
 }
 
 /*
@@ -2213,10 +2229,11 @@ static long compute_memory_address(signal_list_t *addr, int cycle)
 	for (i = 0; i < addr->count; i++)
 	{
 		// If any address pins are x's, write x's we return -1.
-		if (get_pin_value(addr->pins[i],cycle) < 0)
+		signed char value = get_pin_value(addr->pins[i],cycle);
+		if (value < 0)
 			return -1;
 
-		address += get_pin_value(addr->pins[i],cycle) << (i);
+		address += value << (i);
 	}
 
 	return address;
@@ -2881,10 +2898,10 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 			std::string name = sim_data->input_lines->lines[i]->name;
 			if(value < 0
 			&& name.size()
-			&& held_high.empty()
+			&& !held_high.empty()
 			&& std::find(held_high.begin(), held_high.end(), name) != held_high.end())
 			{
-				if (!cycle) value =	0;	// start with reverse value
+				if (cycle<=2) value =	0;	// start with reverse value
 				else        value =	1;	// then hold to requested value				
 			}
 
@@ -2893,12 +2910,13 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 			 */
 			if(value < 0
 			&& name.size()
-			&& held_low.empty()
+			&& !held_low.empty()
 			&& std::find(held_low.begin(), held_low.end(), name) != held_low.end())
 			{
-				if (!cycle) value = 1;	// start with reverse value
+				if (cycle<=2) value = 1;	// start with reverse value
 				else        value = 0;	// then hold to requested value
 			}
+
 			/********************************************************
 			 * if it is a clock node, use it's ratio to generate a cycle
 			 */
@@ -2910,9 +2928,7 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 				if(clock_ratio)
 				{
 					signed char previous_cycle_clock_value = get_pin_value(related_pin, cycle-1);
-					if(cycle == 0)
-						value = 0;
-					else if((cycle%(clock_ratio)) == 0)
+					if((cycle%(clock_ratio)) == 0)
 						value = !previous_cycle_clock_value;
 					else
 						value = previous_cycle_clock_value;
