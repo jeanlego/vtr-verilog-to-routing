@@ -1,0 +1,4 @@
+-V regression_test/benchmark/other/track_clk/freq_division.v
+-t regression_test/benchmark/other/track_clk/input_vectors
+-T regression_test/benchmark/other/track_clk/output_vectors
+-p clk

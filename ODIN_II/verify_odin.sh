@@ -4,19 +4,7 @@ trap ctrl_c INT
 SHELL=/bin/bash
 
 fail_count=0
-
-last_run=$(find regression_test/run* -maxdepth 0 -type d 2>/dev/null | tail -1 )
 new_run=regression_test/run001
-if [ "_${last_run}" != "_" ]
-then
-    last_run_id=${last_run##regression_test/run}
-    n=$(echo $last_run_id | awk '{print $0 + 1}')
-    new_run=regression_test/run$(printf "%03d" $n)
-fi
-echo "running benchmark @${new_run}"
-mkdir -p ${new_run}
-
-### starts here
 NB_OF_PROC=1
 if [[ "$2" -gt "0" ]]
 then
@@ -24,6 +12,18 @@ then
 	echo "Trying to run benchmark on $NB_OF_PROC processes"
 fi
 
+
+function init_temp() {
+	last_run=$(find regression_test/run* -maxdepth 0 -type d 2>/dev/null | tail -1 )
+	if [ "_${last_run}" != "_" ]
+	then
+		last_run_id=${last_run##regression_test/run}
+		n=$(echo $last_run_id | awk '{print $0 + 1}')
+		new_run=regression_test/run$(printf "%03d" $n)
+	fi
+	echo "running benchmark @${new_run}"
+	mkdir -p ${new_run}
+}
 
 function exit_program() {
 
@@ -233,30 +233,37 @@ START=$(date +%s%3N)
 case $1 in
 
 	"functional")
+		init_temp
 		functional_test $NB_OF_PROC
 		;;
 
 	"arch")
+		init_temp
 		arch_test $NB_OF_PROC
 		;;
 
 	"syntax")
+		init_temp
 		syntax_test $NB_OF_PROC
 		;;
 
 	"micro")
+		init_temp
 		micro_test $NB_OF_PROC
 		;;
 
 	"regression")
+		init_temp
 		regression_test $NB_OF_PROC
 		;;
 
 	"other")
+		init_temp
 		other_test $NB_OF_PROC
 		;;
 
 	"full_suite")
+		init_temp
 		arch_test $NB_OF_PROC
 		syntax_test $NB_OF_PROC
 		other_test $NB_OF_PROC
@@ -277,6 +284,7 @@ case $1 in
 		;;
 
 	"pre_commit")
+		init_temp
 		arch_test $NB_OF_PROC
 		syntax_test $NB_OF_PROC
 		other_test $NB_OF_PROC
@@ -288,8 +296,13 @@ case $1 in
 		cd ODIN_II
 		;;
 
+	"clean")
+		for runs in regression_test/run*; do rm -Rf ${runs}; done
+		echo cleaned temporary folders
+		exit 0
+		;;
 	*)
-		echo 'nothing to run, ./verify_odin [ arch, syntax, micro, regression, vtr_basic, vtr_strong or pre_commit ] [ nb_of_process ]'
+		echo 'nothing to run, ./verify_odin [ clean, arch, syntax, other, micro, regression, vtr_basic, vtr_strong or pre_commit ] [ nb_of_process ]'
 		;;
 esac
 

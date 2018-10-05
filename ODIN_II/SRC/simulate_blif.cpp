@@ -162,6 +162,7 @@ void simulate_netlist(netlist_t *netlist)
 		1, progress_bar_position, progress_bar_length, sim_data->total_time);
 
 	fflush(sim_data->out);
+	fclose(sim_data->out);
 	fprintf(sim_data->modelsim_out, "run %d\n", sim_data->num_vectors*100);
 
 	printf("\n");
@@ -3109,8 +3110,6 @@ static void write_cycle_to_modelsim_file(netlist_t *netlist, lines_t *l, FILE* m
  */
 static int verify_output_vectors(char* output_vector_file, int num_vectors)
 {
-	//both edges output has twice the number of output vector
-	num_vectors *= 2;
 
 	int error = FALSE;
 
