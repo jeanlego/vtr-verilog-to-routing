@@ -37,8 +37,6 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 #define CLOCK_INITIAL_VALUE 1
 
-#define get_values_offset(cycle)	(((cycle) + (SIM_WAVE_LENGTH)) % (SIM_WAVE_LENGTH))
-#define is_even_cycle(cycle)	(!((cycle + 2) % 2))
 #define is_clock_node(node)	( (node->type == CLOCK_NODE) || (std::string(node->name) == "top^clk") ) // Strictly for memories.
 #define is_posedge(pin, cycle) (edge_type(pin, cycle) > 0)
 #define is_negedge(pin, cycle) (edge_type(pin, cycle) < 0)
@@ -110,7 +108,7 @@ static void assign_node_to_line(nnode_t *node, lines_t *l, int type, int single_
 static void insert_pin_into_line(npin_t *pin, int pin_number, line_t *line, int type);
 
 static char *generate_vector_header(lines_t *l);
-static void write_vector_headers(FILE *file, lines_t *l);
+static void write_vector_headers(lines_t *l, FILE *file);
 
 static void write_vector_to_file(lines_t *l, FILE *file, int cycle);
 static void write_cycle_to_file(lines_t *l, FILE* file, int cycle);
@@ -150,7 +148,7 @@ void simulate_netlist(netlist_t *netlist)
 	const int progress_bar_length   = 50;
 	
 	int cycle = 0;
-	while(cycle < sim_data->num_vectors)
+	while(cycle <= sim_data->num_vectors)
 	{
 		// this is separated so that we can cycle the simulator externaly for blifexplorer!!
 		cycle = single_step(sim_data, cycle); // this function increments the cycle when successful
@@ -325,6 +323,7 @@ sim_data_t *init_simulation(netlist_t *netlist)
 	if (!verify_lines(input_lines))
 		error_message(SIMULATION_ERROR, 0, -1, "Input lines could not be assigned.");
 
+	write_vector_headers(input_lines, sim_data->in_out);
 	for (int cycle = 0; cycle < sim_data->num_vectors; cycle++)
 	{
 		test_vector *v = NULL;
@@ -344,7 +343,6 @@ sim_data_t *init_simulation(netlist_t *netlist)
 		add_test_vector_to_lines(v, input_lines, cycle);
 		free_test_vector(v);
 
-		// Record the input vectors we are using.
 		write_cycle_to_file(input_lines, sim_data->in_out, cycle);
 		// Write ModelSim script.
 		write_cycle_to_modelsim_file(sim_data->netlist, input_lines, sim_data->modelsim_out, cycle);
@@ -387,19 +385,18 @@ int single_step(sim_data_t *sim_data, int cycle)
 
 	// Perform simulation
 
-	char buffer[BUFFER_MAX_SIZE];
-	if (!get_next_vector(sim_data->in_out, buffer))
-		error_message(SIMULATION_ERROR, 0, -1, "Could not read next vector during simulation for cycle %d.", cycle);
-
-	v = parse_test_vector(buffer);
-	add_test_vector_to_lines(v, sim_data->input_lines, cycle);
-	free_test_vector(v);
-
-	if (cycle)
+	if(cycle < sim_data->num_vectors)
 	{
-		simulate_cycle(cycle, sim_data->stages);
+		char buffer[BUFFER_MAX_SIZE];
+		if (!get_next_vector(sim_data->in_out, buffer))
+			error_message(SIMULATION_ERROR, 0, -1, "Could not read next vector during simulation for cycle %d.", cycle);
+
+		v = parse_test_vector(buffer);
+		add_test_vector_to_lines(v, sim_data->input_lines, cycle);
+		free_test_vector(v);
 	}
-	else
+
+	if(!cycle)
 	{
 		// The first cycle produces the stages, and adds additional
 		// lines as specified by the -p option.
@@ -408,19 +405,19 @@ int single_step(sim_data_t *sim_data, int cycle)
 		if (!verify_lines(sim_data->output_lines))
 			error_message(SIMULATION_ERROR, 0, -1,
 					"Problem detected with the output lines after the first cycle.");
+		simulate_cycle(cycle, sim_data->stages);
+		write_vector_headers(sim_data->output_lines, sim_data->out);
+		print_netlist_stats(sim_data);
+	}
+	else
+	{
+		simulate_cycle(cycle, sim_data->stages);
+		write_cycle_to_file(sim_data->output_lines, sim_data->out, cycle);
 	}
 
 	sim_data->simulation_time += wall_time() - simulation_start_time;
-
-	// Write the result of this wave to the output vector file.
-	write_cycle_to_file(sim_data->output_lines, sim_data->out, cycle);
-
 	sim_data->total_time += wall_time() - wave_start_time;
 
-	// Print netlist-specific statistics.
-	if (!cycle)
-		print_netlist_stats(sim_data);
-		
 	return cycle+1;
 }
 
@@ -2891,62 +2888,60 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 		for (int j = 0; j < sim_data->input_lines->lines[i]->number_of_pins; j++)
 		{
 			signed char value = -1;
-
-			/********************************************************
-			 * use input override to set the pin value to hold high if requested
-			 */
+			npin_t *related_pin = NULL;
+			signed char clock_ratio = -1;
 			std::string name = sim_data->input_lines->lines[i]->name;
-			if(value < 0
-			&& name.size()
-			&& !held_high.empty()
-			&& std::find(held_high.begin(), held_high.end(), name) != held_high.end())
-			{
-				if (cycle<=2) value =	0;	// start with reverse value
-				else        value =	1;	// then hold to requested value				
-			}
 
-			/********************************************************
-			 * use input override to set the pin value to hold low if requested
-			 */
-			if(value < 0
-			&& name.size()
-			&& !held_low.empty()
-			&& std::find(held_low.begin(), held_low.end(), name) != held_low.end())
+			if(sim_data->input_lines->lines[i]->number_of_pins > 0)
 			{
-				if (cycle<=2) value = 1;	// start with reverse value
-				else        value = 0;	// then hold to requested value
+				related_pin = sim_data->input_lines->lines[i]->pins[0];
+				clock_ratio = get_clock_ratio(related_pin->node);
 			}
 
 			/********************************************************
 			 * if it is a clock node, use it's ratio to generate a cycle
 			 */
-			if(value < 0
-			&& (sim_data->input_lines->lines[i]->number_of_pins > 0))
+			if(clock_ratio)
 			{
-				npin_t *related_pin = sim_data->input_lines->lines[i]->pins[0];
-				signed char clock_ratio = get_clock_ratio(related_pin->node);
-				if(clock_ratio)
-				{
-					signed char previous_cycle_clock_value = get_pin_value(related_pin, cycle-1);
-					if((cycle%(clock_ratio)) == 0)
-						value = !previous_cycle_clock_value;
-					else
-						value = previous_cycle_clock_value;
-				}
+				signed char previous_cycle_clock_value = get_pin_value(related_pin, cycle-1);
+				if((cycle%(clock_ratio)) == 0)
+					value = !previous_cycle_clock_value;
+				else
+					value = previous_cycle_clock_value;
 			}
-
+			/********************************************************
+			 * use input override to set the pin value to hold high if requested
+			 */
+			
+			else if(name.size() && !held_high.empty()
+			&& std::find(held_high.begin(), held_high.end(), name) != held_high.end())
+			{
+				if (!cycle) 	value =	0;	// start with reverse value
+				else        	value =	1;	// then hold to requested value				
+			}
+			/********************************************************
+			 * use input override to set the pin value to hold low if requested
+			 */
+			else if(name.size() && !held_low.empty()
+			&& std::find(held_low.begin(), held_low.end(), name) != held_low.end())
+			{
+				if (!cycle) 	value = 1;	// start with reverse value
+				else       		value = 0;		// then hold to requested value
+			}
 			/********************************************************
 			 * set the value via the -3 option
 			 */
-			if(value < 0
-			&& global_args.sim_generate_three_valued_logic)
+			else if( global_args.sim_generate_three_valued_logic)
+			{
 				value = (rand() % 3) - 1;
-
+			}
 			/********************************************************
 			 * default fallback value is a random 1 or 0
 			 */
-			if(value < 0)
+			else
+			{
 				value = (rand() % 2);
+			}
 			
 			v->values[v->count] = (signed char *)vtr::realloc(v->values[v->count], sizeof(signed char) * (v->counts[v->count] + 1));
 			v->values[v->count][v->counts[v->count]++] = value;
@@ -2959,38 +2954,35 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 /*
  * Writes a wave of vectors to the given file. Writes the headers
  * prior to cycle 0.
- *
- * When edge is -1, both edges of the clock are written. When edge is 0,
- * the falling edge is written. When edge is 1, the rising edge is written.
  */
-static void write_cycle_to_file(lines_t *l, FILE* file, int cycle)
+static void write_vector_headers(lines_t *l, FILE* file)
 {
 	//create header
-	if (!cycle)
+	char header[BUFFER_MAX_SIZE] = { 0 };
+	if (l->count)
 	{
-		char header[BUFFER_MAX_SIZE] = { 0 };
-		if (l->count)
+		int j;
+		for (j = 0; j < l->count; j++)
 		{
-			int j;
-			for (j = 0; j < l->count; j++)
-			{
-				// "+ 2" for null and newline/space.
-				if ((strlen(header) + strlen(l->lines[j]->name) + 2) > BUFFER_MAX_SIZE)
-					error_message(SIMULATION_ERROR, 0, -1, "Buffer overflow anticipated while generating vector header.");
+			// "+ 2" for null and newline/space.
+			if ((strlen(header) + strlen(l->lines[j]->name) + 2) > BUFFER_MAX_SIZE)
+				error_message(SIMULATION_ERROR, 0, -1, "Buffer overflow anticipated while generating vector header.");
 
-				strcat(header,l->lines[j]->name);
-				strcat(header," ");
-			}
-			header[strlen(header)-1] = '\n';
+			strcat(header,l->lines[j]->name);
+			strcat(header," ");
 		}
-		else
-		{
-			header[0] = '\n';
-		}
-
-		fprintf(file, "%s", header);
+		header[strlen(header)-1] = '\n';
+	}
+	else
+	{
+		header[0] = '\n';
 	}
 
+	fprintf(file, "%s", header);
+}
+
+static void write_cycle_to_file(lines_t *l, FILE* file, int cycle)
+{
 	//then write the vector
 	std::stringstream buffer;
 	int i;
