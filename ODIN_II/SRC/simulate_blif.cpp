@@ -391,6 +391,12 @@ int single_step(sim_data_t *sim_data, int cycle)
 		add_test_vector_to_lines(v, sim_data->input_lines, cycle);
 		free_test_vector(v);
 	}
+	else
+	{
+		//this is thrown away since propagation takes one cycle, we simply need dummy values
+		test_vector *v = generate_random_test_vector(cycle, sim_data);
+		add_test_vector_to_lines(v, sim_data->input_lines, cycle);
+	}
 
 	// Perform simulation, dont print cycle ==0 and run for an extra cycle to give time for the output to propagate
 	// theres a bug making the output pins offsetted by 1 cycle , this fixes it
