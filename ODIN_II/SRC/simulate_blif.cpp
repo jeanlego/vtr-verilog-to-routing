@@ -379,23 +379,21 @@ int single_step(sim_data_t *sim_data, int cycle)
 {
 
 	double wave_start_time = wall_time();
-	test_vector *v = NULL;
-	// Assign vectors to lines, either by reading or generating them.
-	double simulation_start_time = wall_time();
-
-	// Perform simulation
-
+	//read vector file
 	if(cycle < sim_data->num_vectors)
 	{
 		char buffer[BUFFER_MAX_SIZE];
 		if (!get_next_vector(sim_data->in_out, buffer))
 			error_message(SIMULATION_ERROR, 0, -1, "Could not read next vector during simulation for cycle %d.", cycle);
 
-		v = parse_test_vector(buffer);
+		test_vector *v = parse_test_vector(buffer);
 		add_test_vector_to_lines(v, sim_data->input_lines, cycle);
 		free_test_vector(v);
 	}
 
+	// Perform simulation, dont print cycle ==0 and run for an extra cycle to give time for the output to propagate
+	// theres a bug making the output pins offsetted by 1 cycle , this fixes it
+	double simulation_start_time = wall_time();
 	if(!cycle)
 	{
 		// The first cycle produces the stages, and adds additional
@@ -406,16 +404,16 @@ int single_step(sim_data_t *sim_data, int cycle)
 			error_message(SIMULATION_ERROR, 0, -1,
 					"Problem detected with the output lines after the first cycle.");
 		simulate_cycle(cycle, sim_data->stages);
+		sim_data->simulation_time += wall_time() - simulation_start_time;
 		write_vector_headers(sim_data->output_lines, sim_data->out);
 		print_netlist_stats(sim_data);
 	}
 	else
 	{
 		simulate_cycle(cycle, sim_data->stages);
+		sim_data->simulation_time += wall_time() - simulation_start_time;
 		write_cycle_to_file(sim_data->output_lines, sim_data->out, cycle);
 	}
-
-	sim_data->simulation_time += wall_time() - simulation_start_time;
 	sim_data->total_time += wall_time() - wave_start_time;
 
 	return cycle+1;
