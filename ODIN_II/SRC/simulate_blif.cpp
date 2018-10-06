@@ -136,53 +136,6 @@ double used_time;
 int number_of_workers;
 bool found_best_time;
 
-/*
- * Performs simulation.
- */
-void simulate_netlist(netlist_t *netlist)
-{
-	sim_data_t *sim_data = init_simulation(netlist);	
-	printf("\n");
-
-	int       progress_bar_position = -1;
-	const int progress_bar_length   = 50;
-	
-	int cycle = 0;
-	while(cycle <= sim_data->num_vectors)
-	{
-		// this is separated so that we can cycle the simulator externaly for blifexplorer!!
-		cycle = single_step(sim_data, cycle); // this function increments the cycle when successful
-		// Delay drawing of the progress bar until the second wave to improve the accuracy of the ETA.
-		if (cycle)
-			progress_bar_position = print_progress_bar(
-					cycle/(double)sim_data->num_vectors, progress_bar_position, progress_bar_length, sim_data->total_time);
-	}
-	//show that we are done
-	progress_bar_position = print_progress_bar(
-		1, progress_bar_position, progress_bar_length, sim_data->total_time);
-
-	fflush(sim_data->out);
-	fclose(sim_data->out);
-	fprintf(sim_data->modelsim_out, "run %d\n", sim_data->num_vectors*100);
-
-	printf("\n");
-	// If a second output vector file was given via the -T option, verify that it matches.
-	char *output_vector_file = global_args.sim_vector_output_file;
-	if (output_vector_file)
-	{
-		if (verify_output_vectors(output_vector_file, sim_data->num_vectors))
-			printf("Vector file \"%s\" matches output\n", output_vector_file);
-		else
-			error_message(SIMULATION_ERROR, 0, -1, "Vector files differ.");
-		printf("\n");
-	}
-
-	// Print statistics.
-	print_simulation_stats(sim_data->stages, sim_data->num_vectors, sim_data->total_time, sim_data->simulation_time);
-	// Perform ACE activity calculations
-	calculate_activity ( netlist, sim_data->num_vectors, sim_data->act_out );
-}
-
 /****************************
  * This uses a list of clocks and speed passed via command line (clk1,ratio1 clk2,ratio2 ...)
  * and normalize them to the slowest clock such that all ratio are a proportion of it
@@ -318,41 +271,139 @@ sim_data_t *init_simulation(netlist_t *netlist)
 		error_message(SIMULATION_ERROR, 0, -1, "No vectors to simulate.");
 	}
 
-	// Create temporary input lines and verify.
-	// also init the inout file and the model sim
-	lines_t * input_lines = create_lines(sim_data->netlist, INPUT, !(sim_data->in));
-	if (!verify_lines(input_lines))
-		error_message(SIMULATION_ERROR, 0, -1, "Input lines could not be assigned.");
+	return sim_data;
+}
 
-	write_vector_headers(input_lines, sim_data->in_out);
-	for (int cycle = 0; cycle < sim_data->num_vectors; cycle++)
+/*
+ * Performs simulation.
+ */
+void simulate_netlist(netlist_t *netlist)
+{
+	sim_data_t *sim_data = init_simulation(netlist);	
+	printf("\n");
+
+	int       progress_bar_position = -1;
+	const int progress_bar_length   = 50;
+	
+	double min_coverage = 0;
+	if(global_args.sim_min_coverage)
+		min_coverage = global_args.sim_min_coverage /100;
+
+	for( int cycle =0; cycle < sim_data->num_vectors; cycle++)
 	{
-		test_vector *v = NULL;
-		if (sim_data->in)
-		{
-			char buffer[BUFFER_MAX_SIZE];
-			if (!get_next_vector(sim_data->in, buffer))
-				error_message(SIMULATION_ERROR, 0, -1, "Could not read next vector for cycle %d.", cycle);
+		double wave_start_time = wall_time();
 
-			v = parse_test_vector(buffer);
+		// if we target a minimum coverage keep generating
+		double current_coverage = cycle/(double)sim_data->num_vectors;
+		if(min_coverage && cycle+1 == sim_data->num_vectors)
+		{
+			current_coverage = ((double) get_num_covered_nodes(sim_data->stages) / (double) sim_data->stages->num_nodes);
+			if( current_coverage < min_coverage )
+			{
+				sim_data->num_vectors += global_args.sim_num_test_vectors.value();
+				printf("Simulating another %d vectors, current coverage is: %f", global_args.sim_num_test_vectors.value(), current_coverage);
+			}
+			current_coverage /= min_coverage;
+		}
+
+		double simulation_start_time = wall_time();
+
+		// this is separated so that we can cycle the simulator externaly for blifexplorer!!
+		single_step(sim_data, cycle); // this function increments the cycle when successful
+
+		sim_data->simulation_time += wall_time() - simulation_start_time;
+
+		if(!cycle)
+		{
+			write_vector_headers(sim_data->input_lines, sim_data->in_out);
+			write_vector_headers(sim_data->output_lines, sim_data->out);
 		}
 		else
 		{
-			v = generate_random_test_vector(cycle, sim_data);
+			// Delay drawing of the progress bar until the second wave to improve the accuracy of the ETA.
+			progress_bar_position = print_progress_bar(current_coverage, progress_bar_position, progress_bar_length, sim_data->total_time);
 		}
 
-		add_test_vector_to_lines(v, input_lines, cycle);
-		free_test_vector(v);
-
-		write_cycle_to_file(input_lines, sim_data->in_out, cycle);
+		write_cycle_to_file(sim_data->input_lines, sim_data->in_out, cycle);
+		write_cycle_to_file(sim_data->output_lines, sim_data->out, cycle);
 		// Write ModelSim script.
-		write_cycle_to_modelsim_file(sim_data->netlist, input_lines, sim_data->modelsim_out, cycle);
+		write_cycle_to_modelsim_file(sim_data->netlist, sim_data->input_lines, sim_data->modelsim_out, cycle);
+		
+		sim_data->total_time += wall_time() - wave_start_time;
 	}
-	rewind(sim_data->in_out);
 
-	free_lines(input_lines);
+	//show that we are done
+	progress_bar_position = print_progress_bar(
+		1, progress_bar_position, progress_bar_length, sim_data->total_time);
 
-	return sim_data;
+	fflush(sim_data->out);
+	fclose(sim_data->out);
+	fprintf(sim_data->modelsim_out, "run %d\n", sim_data->num_vectors*100);
+
+	printf("\n");
+	// If a second output vector file was given via the -T option, verify that it matches.
+	char *output_vector_file = global_args.sim_vector_output_file;
+	if (output_vector_file)
+	{
+		if (verify_output_vectors(output_vector_file, sim_data->num_vectors))
+			printf("Vector file \"%s\" matches output\n", output_vector_file);
+		else
+			error_message(SIMULATION_ERROR, 0, -1, "Vector files differ.");
+		printf("\n");
+	}
+
+	// Print statistics.
+	print_simulation_stats(sim_data->stages, sim_data->num_vectors, sim_data->total_time, sim_data->simulation_time);
+	// Perform ACE activity calculations
+	calculate_activity ( netlist, sim_data->num_vectors, sim_data->act_out );
+}
+
+/**
+ * single step sim
+ */
+int single_step(sim_data_t *sim_data, int cycle)
+{
+
+	// read from vector input. 
+	// '-t [input file]' etiher file, 
+	// '-g [number of vectors]' or generated input.
+	// '--threshold [threshold to achieve]'
+	// this also allows to generate the vector until we reach a defined threshold that exercises the circuit. 
+	test_vector *v = NULL;
+	if (sim_data->in)
+	{
+		char buffer[BUFFER_MAX_SIZE];
+		if (!get_next_vector(sim_data->in, buffer))
+			error_message(SIMULATION_ERROR, 0, -1, "Could not read next vector for cycle %d.", cycle);
+
+		v = parse_test_vector(buffer);
+	}
+	else
+	{
+		v = generate_random_test_vector(cycle, sim_data);
+	}
+	add_test_vector_to_lines(v, sim_data->input_lines, cycle);
+	free_test_vector(v);
+
+	// Perform simulation, dont print cycle ==0 and run for an extra cycle to give time for the output to propagate
+	// theres a bug making the output pins offsetted by 1 cycle , this fixes it
+	
+	if(!cycle)
+	{
+		// The first cycle produces the stages, and adds additional
+		// lines as specified by the -p option.
+		sim_data->stages = simulate_first_cycle(sim_data->netlist, cycle, sim_data->output_lines);
+		// Make sure the output lines are still OK after adding custom lines.
+		if (!verify_lines(sim_data->output_lines))
+			error_message(SIMULATION_ERROR, 0, -1,
+					"Problem detected with the output lines after the first cycle.");
+
+		print_netlist_stats(sim_data);
+	}
+
+	simulate_cycle(cycle, sim_data->stages);
+
+	return cycle+1;
 }
 
 sim_data_t *terminate_simulation(sim_data_t *sim_data)
@@ -372,60 +423,6 @@ sim_data_t *terminate_simulation(sim_data_t *sim_data)
 	sim_data = NULL;
 	return sim_data;
 }
-
-/**
- * single step sim
- */
-int single_step(sim_data_t *sim_data, int cycle)
-{
-
-	double wave_start_time = wall_time();
-	//read vector file
-	if(cycle < sim_data->num_vectors)
-	{
-		char buffer[BUFFER_MAX_SIZE];
-		if (!get_next_vector(sim_data->in_out, buffer))
-			error_message(SIMULATION_ERROR, 0, -1, "Could not read next vector during simulation for cycle %d.", cycle);
-
-		test_vector *v = parse_test_vector(buffer);
-		add_test_vector_to_lines(v, sim_data->input_lines, cycle);
-		free_test_vector(v);
-	}
-	else
-	{
-		//this is thrown away since propagation takes one cycle, we simply need dummy values
-		test_vector *v = generate_random_test_vector(cycle, sim_data);
-		add_test_vector_to_lines(v, sim_data->input_lines, cycle);
-	}
-
-	// Perform simulation, dont print cycle ==0 and run for an extra cycle to give time for the output to propagate
-	// theres a bug making the output pins offsetted by 1 cycle , this fixes it
-	double simulation_start_time = wall_time();
-	if(!cycle)
-	{
-		// The first cycle produces the stages, and adds additional
-		// lines as specified by the -p option.
-		sim_data->stages = simulate_first_cycle(sim_data->netlist, cycle, sim_data->output_lines);
-		// Make sure the output lines are still OK after adding custom lines.
-		if (!verify_lines(sim_data->output_lines))
-			error_message(SIMULATION_ERROR, 0, -1,
-					"Problem detected with the output lines after the first cycle.");
-		simulate_cycle(cycle, sim_data->stages);
-		sim_data->simulation_time += wall_time() - simulation_start_time;
-		write_vector_headers(sim_data->output_lines, sim_data->out);
-		print_netlist_stats(sim_data);
-	}
-	else
-	{
-		simulate_cycle(cycle, sim_data->stages);
-		sim_data->simulation_time += wall_time() - simulation_start_time;
-		write_cycle_to_file(sim_data->output_lines, sim_data->out, cycle);
-	}
-	sim_data->total_time += wall_time() - wave_start_time;
-
-	return cycle+1;
-}
-
 
 /*read write barriers for multithreaded sim */
 static void init_read(npin_t *pin)
