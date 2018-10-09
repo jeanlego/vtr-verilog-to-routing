@@ -228,9 +228,26 @@ function functional_test() {
 	sim $threads $bench_type $with_input_vector $with_output_vector $with_blif $with_arch $with_input_args
 }
 
+function operators_test() {
+	threads=$1
+	bench_type=operators
+	with_input_vector=1
+	with_output_vector=1
+	with_blif=1
+	with_arch=0
+	with_input_args=0
+
+	sim $threads $bench_type $with_input_vector $with_output_vector $with_blif $with_arch $with_input_args
+}
+
 START=$(date +%s%3N)
 
 case $1 in
+
+	"operators")
+		init_temp
+		operators_test $NB_OF_PROC
+		;;
 
 	"functional")
 		init_temp
