@@ -3995,8 +3995,7 @@ signal_list_t *evaluate_sensitivity_list(ast_node_t *delay_control, char *instan
 				//TODO support active high active low !!
 				default: /* nothing to do */ break;
 			}
-		}				case ASYNCHRONOUS_SENSITIVITY: // fallthrough
-
+		}
 	}
 
 	/* update the analysis type of this block of statements */

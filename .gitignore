@@ -68,6 +68,13 @@ ODIN_II/regression_test/run[0-9]*
 ODIN_II/temp/*
 ODIN_II/usefull_tools/**/run[0-9]*
 ODIN_II/usefull_tools/**/track_completed
+
+#
+#Blifexplorer test outputs
+#
+blifexplorer/temp/*
+
+
 #
 #C/C++
 #
