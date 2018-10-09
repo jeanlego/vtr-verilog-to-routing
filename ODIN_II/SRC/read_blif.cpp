@@ -36,6 +36,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 #include "simulate_blif.h"
 #include "vtr_util.h"
 #include "vtr_memory.h"
+#include "node_creation_library.h"
 
 #define TOKENS     " \t\n"
 #define GND_NAME   "gnd"
@@ -372,6 +373,9 @@ void create_latch_node_and_driver(FILE *file, hashtable_t *output_nets_hash)
 		new_node->initial_value = initial_value;
 		new_node->has_initial_value = TRUE;
 	}
+
+	// read in type of edge
+	new_node->edge_type = edge_type_blif_enum(names[2]);
 
 	/* allocate the output pin (there is always one output pin) */
 	allocate_more_output_pins(new_node, 1);

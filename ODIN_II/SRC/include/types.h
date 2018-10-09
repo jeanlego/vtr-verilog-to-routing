@@ -221,6 +221,16 @@ typedef enum
 
 typedef enum
 {
+	FALLING_EDGE_SENSITIVITY,
+	RISING_EDGE_SENSITIVITY,
+	ACTIVE_HIGH_SENSITIVITY,
+	ACTIVE_LOW_SENSITIVITY,
+	ASYNCHRONOUS_SENSITIVITY,
+	UNDEFINED_SENSITIVITY
+} edge_type_e;
+
+typedef enum
+{
 	NO_OP,
 	MULTI_PORT_MUX, // port 1 = control, port 2+ = mux options
 	FF_NODE,
@@ -489,6 +499,7 @@ struct nnode_t_t
 	int ratio; //clock ratio for clock nodes
 	signed char has_initial_value; // initial value assigned?
 	signed char initial_value; // initial net value
+	edge_type_e edge_type; //
 
 	//Generic gate output
 	unsigned char generic_output; //describes the output (1 or 0) of generic blocks

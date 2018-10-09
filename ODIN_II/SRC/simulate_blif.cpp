@@ -38,8 +38,11 @@ OTHER DEALINGS IN THE SOFTWARE.
 #define CLOCK_INITIAL_VALUE 1
 
 #define is_clock_node(node)	( (node->type == CLOCK_NODE) || (std::string(node->name) == "top^clk") ) // Strictly for memories.
-#define is_posedge(pin, cycle) (edge_type(pin, cycle) > 0)
-#define is_negedge(pin, cycle) (edge_type(pin, cycle) < 0)
+#define is_posedge(pin, cycle) 	(edge_type(pin, cycle) > 0)
+#define is_negedge(pin, cycle) 	(edge_type(pin, cycle) < 0)
+#define is_edge(pin, cycle)		(edge_type(pin, cycle) != 0)
+#define is_high(pin, cycle)		(get_pin_value(clock_pin, cycle) == 1)
+#define is_low(pin, cycle)		(get_pin_value(clock_pin, cycle) == 0)
 
 static void simulate_cycle(int cycle, stages_t *s);
 static stages_t *simulate_first_cycle(netlist_t *netlist, int cycle, lines_t *output_lines);
@@ -1589,10 +1592,11 @@ static void compute_flipflop_node(nnode_t *node, int cycle)
 	npin_t *output_pin = node->output_pins[0];
 
 	// update the flip-flop from the input value of the previous cycle.
-	
-	bool trigger =	(clock_pin->type == NEGEDGE)? is_negedge(clock_pin, cycle):
-					(clock_pin->type == POSEDGE)? is_posedge(clock_pin, cycle):
-					/*	fallback to posedge */    is_posedge(clock_pin, cycle);
+	bool trigger =	(node->edge_type == FALLING_EDGE_SENSITIVITY)?	is_negedge(clock_pin, cycle):
+					(node->edge_type == RISING_EDGE_SENSITIVITY)?	is_posedge(clock_pin, cycle):
+					(node->edge_type == ACTIVE_HIGH_SENSITIVITY)?	is_high(clock_pin, cycle):
+					(node->edge_type == ACTIVE_LOW_SENSITIVITY)?	is_low(clock_pin, cycle):
+					/*ASYNCHRONOUS_SENSITIVITY (default)*/			is_edge(clock_pin,cycle);
 	
 	npin_t *update_pin_to = (trigger)?	D_pin:	output_pin;
 
