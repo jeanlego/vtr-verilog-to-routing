@@ -765,72 +765,53 @@ void instantiate_EQUAL(nnode_t *node, short type, short mark, netlist_t *netlist
  *-------------------------------------------------------------------------------------------*/
 void instantiate_GT(nnode_t *node, short type, short mark, netlist_t *netlist)
 {
-	int width_a;
-	int width_b;
-	int width_max;
-	int i;
-	int port_A_offset;
-	int port_B_offset;
-	int port_A_index;
-	int port_B_index;
-	int index = 0;
-	nnode_t *xor_gate;
-	nnode_t *logical_or_gate;
-	nnode_t **or_cells;
-	nnode_t **gt_cells;
+	oassert((type == LT || type == GT) &&
+		"Invalid node type in instantiate_GT");
 
 	oassert(node->num_output_pins == 1);
 	oassert(node->num_input_pins > 0);
 	oassert(node->num_input_port_sizes == 2);
 	oassert(node->input_port_sizes[0] == node->input_port_sizes[1]);
-	width_a = node->input_port_sizes[0];
-	width_b = node->input_port_sizes[1];
-	width_max = width_a > width_b ? width_a : width_b;
+
+	nnode_t *xor_gate;
+	nnode_t *logical_or_gate;
+	nnode_t **or_cells;
+	nnode_t **gt_cells;
+
+	int width_a = node->input_port_sizes[0];
+	int width_b = node->input_port_sizes[1];
+	//these are equal
+	int widths = width_a;
 
 	/* swaps ports A and B */
-	if (type == GT)
-	{
-		port_A_offset = 0;
-		port_B_offset = width_a;
-		port_A_index = 0;
-		port_B_index = width_a-1;
-	}
-	else if (type == LT)
-	{
-		port_A_offset = width_b;
-		port_B_offset = 0;
-		port_A_index = width_b-1;
-		port_B_index = 0;
-	}
-	else
-	{
-		port_A_offset = 0;
-		port_B_offset = 0;
-		port_A_index = 0;
-		port_B_index = 0;
-		error_message(NETLIST_ERROR, node->related_ast_node->line_number, node->related_ast_node->file_number, "Invalid node type in instantiate_GT\n");
-	}
+	int port_A_offset = (type == GT)? 	0 			: width_b;
+	int port_B_offset = (type == GT)? 	width_a 	: 0;
+	
+	int port_A_index = (port_A_offset)? port_A_offset-1: 0;
+	int port_B_index = (port_B_offset)? port_B_offset-1: 0;
+
 
 	/* xor gate identifies if any bits don't match */
-	xor_gate = make_2port_gate(LOGICAL_XOR, width_a-1, width_b-1, width_max-1, node, mark);
+	xor_gate = make_2port_gate(LOGICAL_XOR, width_a-1, width_b-1, widths-1, node, mark);
 	/* collects all the GT signals and determines if gt */
-	logical_or_gate = make_1port_logic_gate(LOGICAL_OR, width_max, node, mark);
+	logical_or_gate = make_1port_logic_gate(LOGICAL_OR, widths, node, mark);
 	/* collects a chain if any 1 happens than the GT cells output 0 */
-	or_cells = (nnode_t**)vtr::malloc(sizeof(nnode_t*)*width_max-1);
+	or_cells = (nnode_t**)vtr::malloc(sizeof(nnode_t*)*widths-1);
 	/* each cell checks if A > B and sends out a 1 if history has no 1s (3rd input) */
-	gt_cells = (nnode_t**)vtr::malloc(sizeof(nnode_t*)*width_max);
+	gt_cells = (nnode_t**)vtr::malloc(sizeof(nnode_t*)*widths);
 
-	for (i = 0; i < width_max; i++)
+	for (int i = 0; i < widths; i++)
 	{
 		gt_cells[i] = make_3port_gate(GT, 1, 1, 1, 1, node, mark);
-		if (i < width_max-1)
+		if (i < widths-1)
 		{
 			or_cells[i] = make_2port_gate(LOGICAL_OR, 1, 1, 1, node, mark);
 		}
 	}
 
 	/* connect inputs.  In the case that a signal is smaller than the other then zero pad */
-	for(i = 0; i < width_max; i++)
+	int index = 0;
+	for(int i = 0; i < widths; i++)
 	{
 		/* Joining the inputs to the input 1 of that gate */
 		if (i < width_a)
@@ -864,10 +845,10 @@ void instantiate_GT(nnode_t *node, short type, short mark, netlist_t *netlist)
 				add_input_pin_to_node(xor_gate, get_zero_pin(netlist), index+port_B_index);
 		}
 
-		if (i < width_max-1)
+		if (i < widths-1)
 		{
 			/* number of OR gates */
-			if (i < width_max-2)
+			if (i < widths-2)
 			{
 				/* connect the msb or to the next lower bit */
 				connect_nodes(or_cells[i+1], 0, or_cells[i], 1);
@@ -902,8 +883,13 @@ void instantiate_GT(nnode_t *node, short type, short mark, netlist_t *netlist)
 	remap_pin_to_new_node(node->output_pins[0], logical_or_gate, 0);
 	oassert(logical_or_gate->num_output_pins == 1);
 
-	instantiate_bitwise_logic(xor_gate, BITWISE_XOR, mark, netlist);
-	vtr::free(xor_gate);
+	//skip 1 bit X 1 bit compare
+	if(index)
+	{
+		instantiate_bitwise_logic(xor_gate, BITWISE_XOR, mark, netlist);
+		vtr::free(xor_gate);
+	}
+	
 	vtr::free(gt_cells);
 	vtr::free(or_cells);
 }
