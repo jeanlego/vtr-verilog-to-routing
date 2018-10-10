@@ -3,6 +3,19 @@
 trap ctrl_c INT
 SHELL=/bin/bash
 
+#include more generic names here for better vector generation
+HOLD_LOW_RESET="-L reset rst"
+
+#if you want to pass in a new adder definition file
+ADDER_DEFINITION="--adder_type default"
+
+#if you want to change the default number of vectors to generate
+GENERATE_VECTOR_COUNT="-g 100"
+
+DEFAULT_ARCH="-a ../libs/libarchfpga/arch/sample_arch.xml"
+
+EXEC="./odin_II"
+
 fail_count=0
 new_run=regression_test/run001
 NB_OF_PROC=1
@@ -73,7 +86,7 @@ function sim() {
 			#build commands
 			mkdir -p $DIR
 
-			echo "./odin_II $(cat ${dir}/odin.args | tr '\n' ' ') -o ${DIR}/odin.blif -sim_dir ${DIR}/ &>> ${DIR}/log \
+			echo "${EXEC} $(cat ${dir}/odin.args | tr '\n' ' ') -o ${DIR}/odin.blif -sim_dir ${DIR}/ &>> ${DIR}/log \
 				&& echo --- PASSED == ${bench_type}/$test_name \
 				|| (echo -X- FAILED == ${bench_type}/$test_name \
 					&& echo ${bench_type}/$test_name >> ${new_run}/failure.log)" > ${DIR}/log
@@ -92,16 +105,16 @@ function sim() {
 			verilog_command=""
 			blif_command=""
 
-			verilog_command="./odin_II --adder_type default -L reset -V ${benchmark_dir}/${test_name}.v -o ${DIR}/odin.blif"
+			verilog_command="${EXEC} ${ADDER_DEFINITION} -V ${benchmark_dir}/${test_name}.v -o ${DIR}/odin.blif"
 
 			[ "_$with_blif" == "_1" ] &&
-				blif_command=" && ./odin_II --adder_type default -L reset -b ${DIR}/odin.blif"
+				blif_command=" && ${EXEC} ${ADDER_DEFINITION} -b ${DIR}/odin.blif"
 
 			[ "_$with_arch" == "_1" ] &&
-				verilog_command="${verilog_command} -a ../libs/libarchfpga/arch/sample_arch.xml"
+				verilog_command="${verilog_command} ${DEFAULT_ARCH}"
 			
 			[ "_$with_blif" == "_1" ] && [ "_$with_arch" == "_1" ] &&
-				blif_command="${blif_command} -a ../libs/libarchfpga/arch/sample_arch.xml"
+				blif_command="${blif_command} ${DEFAULT_ARCH}"
 
 			if [ "_$with_input_vector" == "_1" ]; then
 				verilog_command="${verilog_command} -t ${benchmark_dir}/${test_name}_input"
@@ -116,10 +129,10 @@ function sim() {
 						blif_command="${blif_command} -T ${benchmark_dir}/${test_name}_output"
 				fi
 			else
-				verilog_command="${verilog_command} -g 100"
+				verilog_command="${verilog_command} ${HOLD_LOW_RESET} ${GENERATE_VECTOR_COUNT}"
 
 				[ "_$with_blif" == "_1" ] &&
-					blif_command="${blif_command} -g 100"
+					blif_command="${blif_command} ${HOLD_LOW_RESET} ${GENERATE_VECTOR_COUNT}"
 			fi
 
 			verilog_command="${verilog_command} -sim_dir ${DIR}/ &>> ${DIR}/log"
@@ -143,6 +156,49 @@ function sim() {
 			eval $(cat "${tests}/log" | tr "\n" " ")
 		done
 	fi
+}
+
+function regenerate_bench() {
+	threads=$1
+	bench_type=$2
+	
+	benchmark_dir=regression_test/benchmark/${bench_type}
+
+	for benchmark in ${benchmark_dir}/*.v
+	do
+		basename=${benchmark%.v}
+		test_name=${basename##*/}
+		DIR="${new_run}/${bench_type}/$test_name"
+
+		#build commands
+		mkdir -p $DIR
+		echo "${EXEC} ${ADDER_DEFINITION} -V ${benchmark_dir}/${test_name}.v ${HOLD_LOW_RESET} ${GENERATE_VECTOR_COUNT} --best_coverage -sim_dir ${DIR}/ &>> ${DIR}/log \
+			&& echo --- PASSED == ${bench_type}/$test_name \
+			|| (echo -X- FAILED == ${bench_type}/$test_name \
+				&& echo ${bench_type}/$test_name >> ${new_run}/failure.log)" > ${DIR}/log
+	done
+
+
+	if [ $1 -gt "1" ]
+	then
+		find ${new_run}/${bench_type}/ -maxdepth 1 -mindepth 1 | xargs -n1 -P$1 -I test_dir /bin/bash -c \
+			'eval $(cat "test_dir/log" | tr "\n" " ")'
+	else
+		for tests in ${new_run}/${bench_type}/*; do 
+			eval $(cat "${tests}/log" | tr "\n" " ")
+		done
+	fi
+
+	#rename input and output vectors and delete all directories
+	mkdir -p ${new_run}/VECTORS/
+	for tests in ${new_run}/${bench_type}/*; do 
+		test_name=${tests##*/}
+		if [ -e ${tests}/input_vectors ]; then
+			cp ${tests}/input_vectors ${new_run}/VECTORS/${test_name}_input
+			cp ${tests}/output_vectors ${new_run}/VECTORS/${test_name}_output
+			echo -e "$(cat ${tests}/log | grep Coverage: | cut -d '(' -f2 | cut -d ')' -f1) <= ${test_name} " >> ${new_run}/VECTORS/report.coverage
+		fi
+	done
 }
 
 #1				#2
@@ -277,6 +333,11 @@ case $1 in
 	"other")
 		init_temp
 		other_test $NB_OF_PROC
+		;;
+
+	"regenerate_bench")
+		init_temp
+		regenerate_bench $NB_OF_PROC $3
 		;;
 
 	"full_suite")

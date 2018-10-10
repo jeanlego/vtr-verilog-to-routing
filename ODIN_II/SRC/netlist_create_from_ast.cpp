@@ -3976,9 +3976,10 @@ signal_list_t *evaluate_sensitivity_list(ast_node_t *delay_control, char *instan
 			if(edge_type == UNDEFINED_SENSITIVITY)
 				edge_type = child_sensitivity;
 
-			if(edge_type != child_sensitivity)
+			if(	(edge_type == ASYNCHRONOUS_SENSITIVITY && child_sensitivity != ASYNCHRONOUS_SENSITIVITY)
+			||	(edge_type != ASYNCHRONOUS_SENSITIVITY && child_sensitivity == ASYNCHRONOUS_SENSITIVITY))
 				error_message(NETLIST_ERROR, delay_control->line_number, delay_control->file_number,
-					"Sensitivity list switches between edge type or from sequential to combinational.  You can't define something like always @(posedge clock or a),  always @(posedge clock or negedge a).\n");
+					"Sensitivity list switches between edge sensitive to asynchronous.  You can't define something like always @(posedge clock or a).\n");
 			
 			switch(edge_type)
 			{

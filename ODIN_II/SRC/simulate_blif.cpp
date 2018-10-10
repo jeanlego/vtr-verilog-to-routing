@@ -288,25 +288,55 @@ void simulate_netlist(netlist_t *netlist)
 	int       progress_bar_position = -1;
 	const int progress_bar_length   = 50;
 	
-	double min_coverage = 0;
+	int increment_vector_by = global_args.sim_num_test_vectors;;
+	double min_coverage =0.0;
 	if(global_args.sim_min_coverage)
-		min_coverage = global_args.sim_min_coverage /100;
+	{
+		min_coverage = global_args.sim_min_coverage/100;
+	}
+	else if(global_args.sim_achieve_best)
+	{
+		min_coverage = 0.0001;
+	}	
 
-	for( int cycle =0; cycle < sim_data->num_vectors; cycle++)
+	double current_coverage =0.0;
+	int cycle =0;
+	while(cycle < sim_data->num_vectors)
 	{
 		double wave_start_time = wall_time();
 
 		// if we target a minimum coverage keep generating
-		double current_coverage = cycle/(double)sim_data->num_vectors;
-		if(min_coverage && cycle+1 == sim_data->num_vectors)
+		if(min_coverage > 0.0)
 		{
-			current_coverage = ((double) get_num_covered_nodes(sim_data->stages) / (double) sim_data->stages->num_nodes);
-			if( current_coverage < min_coverage )
+			if(cycle+1 == sim_data->num_vectors)
 			{
-				sim_data->num_vectors += global_args.sim_num_test_vectors.value();
-				printf("Simulating another %d vectors, current coverage is: %f", global_args.sim_num_test_vectors.value(), current_coverage);
+				current_coverage = (((double) get_num_covered_nodes(sim_data->stages) / (double) sim_data->stages->num_nodes));
+				if(global_args.sim_achieve_best)
+				{
+					if(current_coverage > min_coverage)
+					{
+						increment_vector_by = global_args.sim_num_test_vectors;
+						min_coverage = current_coverage;
+						sim_data->num_vectors += increment_vector_by;
+					}
+					else if(increment_vector_by)
+					{
+						//slowly reduce the search until there is no more possible increment, this prevent building too large of a comparative vector pair
+						sim_data->num_vectors += increment_vector_by;
+						increment_vector_by /= 2;
+					}
+
+				}
+				else
+				{
+					if(current_coverage < min_coverage)
+						sim_data->num_vectors += increment_vector_by;
+				}
 			}
-			current_coverage /= min_coverage;
+		}
+		else
+		{
+			current_coverage = cycle/(double)sim_data->num_vectors;
 		}
 
 		double simulation_start_time = wall_time();
@@ -333,6 +363,7 @@ void simulate_netlist(netlist_t *netlist)
 		write_cycle_to_modelsim_file(sim_data->netlist, sim_data->input_lines, sim_data->modelsim_out, cycle);
 		
 		sim_data->total_time += wall_time() - wave_start_time;
+		cycle++;
 	}
 
 	//show that we are done
@@ -522,7 +553,7 @@ static void simulate_cycle(int cycle, stages_t *s)
 		total_run_time += wall_time()-time;
 	}
 
-	s->avg_worker_count = (double)number_of_workers;
+	s->avg_worker_count = number_of_workers;
 
 	if(! found_best_time && global_args.parralelized_simulation.value() > 1)
 	{
@@ -746,7 +777,7 @@ static stages_t *stage_ordered_nodes(nnode_t **ordered_nodes, int num_ordered_no
 	s->count  = 1;
 	s->num_connections = 0;
 	s->num_nodes = num_ordered_nodes;
-	s->avg_worker_count = 0;
+	s->avg_worker_count = 1;
 	s->worker_const = 1;
 	s->worker_temp = 0;
 	s->times =__DBL_MAX__;
@@ -2871,6 +2902,20 @@ static test_vector *parse_test_vector(char *buffer)
  *
  * If you want better randomness, call srand at some point.
  */
+static bool contains_a_substr_of_name(std::vector<std::string> held, std::string& name)
+{
+	if(!name.size())
+		return false;
+	
+	if(held.empty())
+		return false;
+
+	for(std::string sub_str: held)
+		if(name.find(sub_str) != std::string::npos)
+			return true;
+	return false;
+}
+
 static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 {
 	/**
@@ -2880,9 +2925,6 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 	v->values = 0;
 	v->counts = 0;
 	v->count = 0;
-
-	std::vector<std::string> held_high = global_args.sim_hold_high;
-	std::vector<std::string> held_low = global_args.sim_hold_low;
 
 	for (int i = 0; i < sim_data->input_lines->count; i++)
 	{
@@ -2919,8 +2961,7 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 			 * use input override to set the pin value to hold high if requested
 			 */
 			
-			else if(name.size() && !held_high.empty()
-			&& std::find(held_high.begin(), held_high.end(), name) != held_high.end())
+			else if(contains_a_substr_of_name(global_args.sim_hold_high.value(),name))
 			{
 				if (!cycle) 	value =	0;	// start with reverse value
 				else        	value =	1;	// then hold to requested value				
@@ -2928,8 +2969,7 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 			/********************************************************
 			 * use input override to set the pin value to hold low if requested
 			 */
-			else if(name.size() && !held_low.empty()
-			&& std::find(held_low.begin(), held_low.end(), name) != held_low.end())
+			else if(contains_a_substr_of_name(global_args.sim_hold_low.value(),name))
 			{
 				if (!cycle) 	value = 1;	// start with reverse value
 				else       		value = 0;		// then hold to requested value
@@ -3490,11 +3530,12 @@ static void print_netlist_stats(sim_data_t *sim_data)
 
 
 	printf("  Clock Pins:      %d\n",    sim_data->input_lines->num_of_clock);
+	printf("  Vector Count:    %d\n",    sim_data->num_vectors);
 	printf("  Nodes:           %d\n",    sim_data->stages->num_nodes);
 	printf("  Connections:     %d\n",    sim_data->stages->num_connections);
 	printf("  Degree:          %3.2f\n", sim_data->stages->num_connections/(float)sim_data->stages->num_nodes);
 	printf("  Stages:          %d\n",    sim_data->stages->count);
-	printf("  Nodes/thread:    %d(%4.2f%%)\n", (int)(sim_data->stages->num_nodes/sim_data->stages->avg_worker_count), 100.0/sim_data->stages->avg_worker_count);
+	printf("  Nodes/thread:    %4.2f(%4.2f%%)\n", (sim_data->stages->num_nodes/sim_data->stages->avg_worker_count), 100.0/sim_data->stages->avg_worker_count);
 	printf("\n");
 
 }

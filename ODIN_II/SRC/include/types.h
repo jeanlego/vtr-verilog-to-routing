@@ -171,6 +171,9 @@ struct global_args_t_t
 	// Generate this number of random vectors.
 	argparse::ArgValue<double> sim_min_coverage;
 	// Input vectors to simulate instead of generating vectors.
+	argparse::ArgValue<bool> sim_achieve_best;
+	// Input vectors to simulate instead of generating vectors.
+	
 	argparse::ArgValue<char*> sim_vector_input_file;
 	// Existing output vectors to verify against.
 	argparse::ArgValue<char*> sim_vector_output_file;

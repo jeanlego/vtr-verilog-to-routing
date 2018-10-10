@@ -3,10 +3,10 @@ module frequency_divide(
 	reset,
 	base_clk,
 	re_clkdiv2,
-	re_clkdiv4,
-	re_clkdiv8,
 	fe_clkdiv2,
+	re_clkdiv4,
 	fe_clkdiv4,
+	re_clkdiv8,
 	fe_clkdiv8
 );
 	/* input declaration */
@@ -15,10 +15,10 @@ module frequency_divide(
 	/* output declaration */
 	output base_clk;
 	output re_clkdiv2;
-	output re_clkdiv4;
-	output re_clkdiv8;
 	output fe_clkdiv2;
+	output re_clkdiv4;
 	output fe_clkdiv4;
+	output re_clkdiv8;
 	output fe_clkdiv8;
 
 	/*  intermediate declaration */
