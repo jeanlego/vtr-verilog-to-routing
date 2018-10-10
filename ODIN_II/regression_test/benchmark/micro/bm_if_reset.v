@@ -29,17 +29,18 @@ wire [`BITS-1:0] temp_a;
 
 a top_a(clock, a_in, temp_a);
 
+// todo: is this valid edge for always block?
 always @(posedge clock or negedge reset_n)
 begin
-	if (reset_n == 1'b0)
-	begin
-		out0 <= 2'b00;
-		out1 <= 1'b0;
-	end
-	else
+	if (~ reset_n)
 	begin
 		out0 <= a_in & b_in;
 		out1 <= c_in & d_in;
+	end
+	else
+	begin
+		out0 <= 2'b00;
+		out1 <= 1'b0;
 	end
 end
 

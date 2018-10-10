@@ -6,7 +6,6 @@
 
 // sees if the softaware matches simple primitives 
 module 	bm_match2_str_arch(clock, 
-		reset_n, 
 		a_in, 
 		b_in,
 		c_in, 
@@ -23,7 +22,6 @@ module 	bm_match2_str_arch(clock,
 
 // SIGNAL DECLARATIONS
 input	clock;
-input 	reset_n;
 
 input [`BITS0-1:0] a_in;
 input [`BITS0-1:0] b_in;

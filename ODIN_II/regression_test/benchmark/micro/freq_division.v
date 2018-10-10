@@ -32,11 +32,7 @@ module frequency_divide(
 
 	always @(posedge clk)
 	begin
-		if (reset)
-		begin
-			re_counter <= 3'b000;
-		end
-		else
+		if (~reset)
 		begin
 			case (re_counter)
 				3'b000:  begin	re_counter <= 3'b001;	end
@@ -48,6 +44,10 @@ module frequency_divide(
 				3'b110:	 begin	re_counter <= 3'b111;	end
 				default: begin	re_counter <= 3'b000;	end
 			endcase
+		end
+		else
+		begin
+			re_counter <= 3'b000;
 		end
 	end
 
@@ -61,11 +61,7 @@ module frequency_divide(
 
 	always @(negedge clk)
 	begin
-		if (reset)
-		begin
-			fe_counter <= 3'b000;
-		end
-		else
+		if (~reset)
 		begin
 			case (fe_counter)
 				3'b000:  begin	fe_counter <= 3'b001;	end
@@ -77,6 +73,10 @@ module frequency_divide(
 				3'b110:	 begin	fe_counter <= 3'b111;	end
 				default: begin	fe_counter <= 3'b000;	end
 			endcase
+		end
+		else
+		begin
+			fe_counter <= 3'b000;
 		end
 	end
 

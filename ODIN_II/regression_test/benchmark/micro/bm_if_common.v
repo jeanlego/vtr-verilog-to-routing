@@ -2,7 +2,6 @@
 `define BITS 2         // Bit width of the operands
 
 module 	bm_if_common(clock, 
-		reset_n, 
 		a_in, 
 		b_in,
 		c_in, 
@@ -13,7 +12,6 @@ module 	bm_if_common(clock,
 
 // SIGNAL DECLARATIONS
 input	clock;
-input 	reset_n;
 
 input [`BITS-1:0] a_in;
 input [`BITS-1:0] b_in;

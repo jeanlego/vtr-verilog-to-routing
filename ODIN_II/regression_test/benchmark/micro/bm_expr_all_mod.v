@@ -2,7 +2,6 @@
 `define BITS 32         // Bit width of the operands
 
 module 	bm_expr_all_mod(clock, 
-		reset_n, 
 		a_in, 
 		b_in,
 		number_in_1,
@@ -53,7 +52,6 @@ module 	bm_expr_all_mod(clock,
 );
 		
 input	clock;
-input 	reset_n;
 
 input [`BITS-1:0] a_in;
 input  b_in;

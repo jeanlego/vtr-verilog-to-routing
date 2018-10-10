@@ -2911,8 +2911,11 @@ static bool contains_a_substr_of_name(std::vector<std::string> held, std::string
 		return false;
 
 	for(std::string sub_str: held)
+	{
+		std::transform(sub_str.begin(), sub_str.end(), sub_str.begin(), ::tolower);
 		if(name.find(sub_str) != std::string::npos)
 			return true;
+	}
 	return false;
 }
 
@@ -2939,6 +2942,7 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 			npin_t *related_pin = NULL;
 			signed char clock_ratio = -1;
 			std::string name = sim_data->input_lines->lines[i]->name;
+			std::transform(name.begin(), name.end(), name.begin(), ::tolower);
 
 			if(sim_data->input_lines->lines[i]->number_of_pins > 0)
 			{

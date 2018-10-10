@@ -40,7 +40,7 @@ module bm_sfifo_rtl(
 
 // INPUTS
 input					clock;		// Clock input
-input					reset_n;	// Active low reset
+input					reset_n;	// Active high reset
 input [`FIFO_WIDTH-1:0]	data_in; 	// Data input to FIFO
 input					read_n;	 	// Read FIFO (active low)
 input					write_n;	// Write FIFO (active low)
@@ -92,12 +92,6 @@ assign half = (counter >= `FIFO_HALF) ? 1'b1 : 1'b0;
 // and reset inputs
 always @(posedge clock) begin
 	if (~reset_n) begin
-		// Reset the FIFO pointer
-		rd_pointer <=  0;
-		wr_pointer <=  0;
-		counter <=  0;
-	end
-	else begin
 		// If we are doing a simultaneous read and write,
 		// there is no change to the counter
 		if (~read_n && write_n) begin
@@ -129,6 +123,12 @@ always @(posedge clock) begin
 			else
 				wr_pointer <=  wr_pointer + 1;
 		end
+	end
+	else	begin
+		// Reset the FIFO pointer
+		rd_pointer <=  0;
+		wr_pointer <=  0;
+		counter <=  0;
 	end
 end
 
