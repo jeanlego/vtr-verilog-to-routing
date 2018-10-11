@@ -38,9 +38,10 @@ OTHER DEALINGS IN THE SOFTWARE.
 #define CLOCK_INITIAL_VALUE 1
 
 #define is_clock_node(node)	( (node->type == CLOCK_NODE) || (std::string(node->name) == "top^clk") ) // Strictly for memories.
-#define is_posedge(pin, cycle) 	(edge_type(pin, cycle) > 0)
-#define is_negedge(pin, cycle) 	(edge_type(pin, cycle) < 0)
-#define is_edge(pin, cycle)		(edge_type(pin, cycle) != 0)
+#define get_edge_type(pin, cycle) (get_pin_value(pin, cycle) - get_pin_value(pin, cycle-1))
+#define is_posedge(pin, cycle) 	(get_edge_type(pin,cycle) > 0)
+#define is_negedge(pin, cycle) 	(get_edge_type(pin,cycle) < 0)
+#define is_edge(pin, cycle)		(get_edge_type(pin,cycle) != 0)
 #define is_high(pin, cycle)		(get_pin_value(clock_pin, cycle) == 1)
 #define is_low(pin, cycle)		(get_pin_value(clock_pin, cycle) == 0)
 
@@ -132,7 +133,6 @@ static void flag_undriven_input_pins(nnode_t *node);
 
 static void print_ancestry(nnode_t *node, int generations);
 static nnode_t *print_update_trace(nnode_t *bottom_node, int cycle);
-signed char edge_type(npin_t *pin, int cycle);
 
 
 double used_time;
@@ -571,44 +571,6 @@ static void simulate_cycle(int cycle, stages_t *s)
 
 }
 
-
-/*
- * Updates all pins which have been flagged as undriven
- * to -1 for the given cycle.
- *
- * Also checks that other pins have been updated
- * by cycle 3 and throws an error if they haven't been.
- *
- * This function is called when each node is updated as a
- * safeguard.
- */
-static void update_undriven_input_pins(nnode_t *node, int cycle)
-{
-	int i;
-	for (i = 0; i < node->num_undriven_pins; i++)
-		update_pin_value(node->undriven_pins[i], global_args.sim_initial_value, cycle);
-
-	// By the third cycle everything in the netlist should have been updated.
-	if (cycle == 3)
-	{
-		for (i = 0; i < node->num_input_pins; i++)
-		{
-			if (get_pin_cycle( node->input_pins[i]) < cycle-1)
-			{
-				// Print the trace.
-				nnode_t *root = print_update_trace(node, cycle);
-				// Throw an error.
-				error_message(SIMULATION_ERROR,0,-1,"Odin has detected that an input pin attached to %s isn't being updated.\n"
-						"\tPin name: %s\n"
-						"\tRoot node: %s\n"
-						"\tSee the trace immediately above this message for details.\n",
-						node->name, node->input_pins[i]->name, root?root->name:"N/A"
-				);
-			}
-		}
-	}
-}
-
 /*
  * Checks to see if the node is ready to be simulated for the given cycle.
  */
@@ -644,50 +606,30 @@ static int is_node_ready(nnode_t* node, int cycle)
 				}
 			}
 		}
-		update_undriven_input_pins(node, cycle);
 	}
 
-	if (node->type == FF_NODE)
-	{
-		npin_t *D_pin     = node->input_pins[0];
-		npin_t *clock_pin = node->input_pins[1];
-		// Flip-flops depend on the D input from the previous cycle and the clock from this cycle.
-		if
-		(
-			   (get_pin_cycle(D_pin    ) < cycle-1)
-			|| (get_pin_cycle(clock_pin) < cycle  )
-		)
-			return FALSE;
-	}
-	else if (node->type == MEMORY)
-	{
-		int i;
-		for (i = 0; i < node->num_input_pins; i++)
+	for (int i = 0; i < node->num_undriven_pins; i++)
+			update_pin_value(node->undriven_pins[i], global_args.sim_initial_value, cycle);
+
+	for (int i = 0; i < node->num_input_pins; i++)
+		if (get_pin_cycle(node->input_pins[i]) < cycle)
 		{
-			npin_t *pin = node->input_pins[i];
-			// The data and write enable inputs rely on the values from the previous cycle.
-			if (
-					   !strcmp(pin->mapping, "data") || !strcmp(pin->mapping, "data1") || !strcmp(pin->mapping, "data2")
-					|| !strcmp(pin->mapping, "we")   || !strcmp(pin->mapping, "we1")   || !strcmp(pin->mapping, "we2")
-			)
+			if(cycle > 2)
 			{
-				if (get_pin_cycle(pin) < cycle-1)
-					return FALSE;
+				// Print the trace.
+				nnode_t *root = print_update_trace(node, cycle);
+				// Throw an error.
+				error_message(SIMULATION_ERROR,0,-1,"Odin has detected that an input pin attached to %s isn't being updated.\n"
+						"\tPin name: %s\n"
+						"\tRoot node: %s\n"
+						"\tSee the trace immediately above this message for details.\n",
+						node->name, node->input_pins[i]->name, root?root->name:"N/A"
+				);
 			}
-			else
-			{
-				if (get_pin_cycle(pin) < cycle)
-					return FALSE;
-			}
+
+			return FALSE;
 		}
-	}
-	else
-	{
-		int i;
-		for (i = 0; i < node->num_input_pins; i++)
-			if (get_pin_cycle(node->input_pins[i]) < cycle)
-				return FALSE;
-	}
+
 	return TRUE;
 }
 
@@ -850,7 +792,8 @@ static stages_t *stage_ordered_nodes(nnode_t **ordered_nodes, int num_ordered_no
  */
 static void compute_and_store_value(nnode_t *node, int cycle)
 {
-	update_undriven_input_pins(node, cycle);
+	bool skip_node_from_coverage = true;
+	is_node_ready(node, cycle);
 
 	operation_list type = is_clock_node(node)?CLOCK_NODE:node->type;
 
@@ -858,15 +801,19 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 	{
 		case MUX_2:
 			compute_mux_2_node(node, cycle);
+			skip_node_from_coverage = false;
 			break;
 		case FF_NODE:
 			compute_flipflop_node(node, cycle);
+			skip_node_from_coverage = false;
 			break;
 		case MEMORY:
 			compute_memory_node(node, cycle);
+			skip_node_from_coverage = false;
 			break;
 		case MULTIPLY:
 			compute_multiply_node(node, cycle);
+			skip_node_from_coverage = false;
 			break;
 		case LOGICAL_AND: // &&
 		{
@@ -884,6 +831,7 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 			if      (zero)    update_pin_value(node->output_pins[0],  0, cycle);
 			else if (unknown) update_pin_value(node->output_pins[0], -1, cycle);
 			else              update_pin_value(node->output_pins[0],  1, cycle);
+			skip_node_from_coverage = false;
 			break;
 		}
 		case LOGICAL_OR:
@@ -902,6 +850,7 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 			if      (one)     update_pin_value(node->output_pins[0],  1, cycle);
 			else if (unknown) update_pin_value(node->output_pins[0], -1, cycle);
 			else              update_pin_value(node->output_pins[0],  0, cycle);
+			skip_node_from_coverage = false;
 			break;
 		}
 		case LOGICAL_NAND:
@@ -920,6 +869,7 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 			if      (one)     update_pin_value(node->output_pins[0],  1, cycle);
 			else if (unknown) update_pin_value(node->output_pins[0], -1, cycle);
 			else              update_pin_value(node->output_pins[0],  0, cycle);
+			skip_node_from_coverage = false;
 			break;
 		}
 		case LOGICAL_NOT: // !
@@ -939,6 +889,7 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 			if      (zero)    update_pin_value(node->output_pins[0],  0, cycle);
 			else if (unknown) update_pin_value(node->output_pins[0], -1, cycle);
 			else              update_pin_value(node->output_pins[0],  1, cycle);
+			skip_node_from_coverage = false;
 			break;
 		}
 		case LT: // < 010 1
@@ -956,7 +907,7 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 				update_pin_value(node->output_pins[0],  1, cycle);
 			else
 				update_pin_value(node->output_pins[0],  0, cycle);
-
+			skip_node_from_coverage = false;
 			break;
 		}
 		case GT: // > 100 1
@@ -974,7 +925,7 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 				update_pin_value(node->output_pins[0],  1, cycle);
 			else
 				update_pin_value(node->output_pins[0],  0, cycle);
-
+			skip_node_from_coverage = false;
 			break;
 		}
 		case ADDER_FUNC: // 001 1\n010 1\n100 1\n111 1
@@ -997,7 +948,7 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 				update_pin_value(node->output_pins[0], 1, cycle);
 			else
 				update_pin_value(node->output_pins[0], 0, cycle);
-
+			skip_node_from_coverage = false;
 			break;
 		}
 		case CARRY_FUNC: // 011 1\n100 1\n110 1\n111 1
@@ -1009,7 +960,7 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 			signed char pin1 = get_pin_value(node->input_pins[1],cycle);
 			signed char pin2 = get_pin_value(node->input_pins[2],cycle);
 
-			if (pin0 < 0 || pin1 < 0 || pin2 < 0)
+			if (pin0 >= 0 || pin1 >= 0 || pin2 >= 0)
 				update_pin_value(node->output_pins[0], -1, cycle);
 			else if (
 				   (pin0 == 1 && (pin1 == 1 || pin2 == 1))
@@ -1018,7 +969,7 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 				update_pin_value(node->output_pins[0], 1, cycle);
 			else
 				update_pin_value(node->output_pins[0], 0, cycle);
-
+			skip_node_from_coverage = false;
 			break;
 		}
 		case NOT_EQUAL:	  // !=
@@ -1038,6 +989,7 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 			if      (unknown)         update_pin_value(node->output_pins[0], -1, cycle);
 			else if ((ones % 2) == 1) update_pin_value(node->output_pins[0],  1, cycle);
 			else                      update_pin_value(node->output_pins[0],  0, cycle);
+			skip_node_from_coverage = false;
 			break;
 		}
 		case LOGICAL_EQUAL:	// ==
@@ -1057,6 +1009,7 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 			if      (unknown)         update_pin_value(node->output_pins[0], -1, cycle);
 			else if ((ones % 2) == 1) update_pin_value(node->output_pins[0],  0, cycle);
 			else                      update_pin_value(node->output_pins[0],  1, cycle);
+			skip_node_from_coverage = false;
 			break;
 		}
 		case BITWISE_NOT:
@@ -1069,6 +1022,7 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 			if      (pin  < 0) update_pin_value(node->output_pins[0], -1, cycle);
 			else if (pin == 1) update_pin_value(node->output_pins[0],  0, cycle);
 			else               update_pin_value(node->output_pins[0],  1, cycle);
+			skip_node_from_coverage = false;
 			break;
 		}
 		case CLOCK_NODE:
@@ -1089,27 +1043,33 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 			update_pin_value(node->output_pins[0], 0, cycle);
 			break;
 		case INPUT_NODE:
+			skip_node_from_coverage = false;
 			break;
 		case OUTPUT_NODE:
 			oassert(node->num_output_pins == 1);
 			oassert(node->num_input_pins  == 1);
 			update_pin_value(node->output_pins[0], get_pin_value(node->input_pins[0],cycle), cycle);
+			skip_node_from_coverage = false;
 			break;
 		case HARD_IP:
 			compute_hard_ip_node(node,cycle);
+			skip_node_from_coverage = false;
 			break;
 		case GENERIC :
 			compute_generic_node(node,cycle);
+			skip_node_from_coverage = false;
 			break;
 		//case FULLADDER:
 		case ADD:
 			compute_add_node(node, cycle, 0);
+			skip_node_from_coverage = false;
 			break;
 		case MINUS:
 			if(node->num_input_port_sizes == 3)
 				compute_add_node(node, cycle, 1);
 			else
 				compute_unary_sub_node(node, cycle);
+			skip_node_from_coverage = false;
 			break;
 		/* These should have already been converted to softer versions. */
 		case BITWISE_AND:
@@ -1133,40 +1093,39 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 			break;
 	}
 
-	// Record coverage on any output pins that have changed.
-	{
-		int i;
-		for (i = 0; i < node->num_output_pins; i++)
-			if(get_pin_value(node->output_pins[i],cycle-1) != get_pin_value(node->output_pins[i],cycle))
-				node->output_pins[i]->coverage++;
-	}
-
-
 	// Count number of ones and toggles for activity estimation
-	// This could probably lead to the removal of the coverage code above.
+	bool covered =true;
+	if(!skip_node_from_coverage)
 	{
-	  int i, pin_value, last_pin_value;
-	  for (i = 0; i < node->num_output_pins; i++) {
-	    if ( node->output_pins[i]->ace_info != NULL ) {
+		for (int i = 0; i < node->num_output_pins; i++) {
+			if ( node->output_pins[i]->ace_info != NULL ) {
 
-	      pin_value = get_pin_value(node->output_pins[i],cycle);
-	      //last_pin_value = get_pin_value(node->output_pins[i],cycle-1);
-              // Pin values for cycle-1 were not correct on Wave boundaries. Needed to store it in ace object.
-	      last_pin_value = node->output_pins[i]->ace_info->value;
+				signed char pin_value = get_pin_value(node->output_pins[i],cycle);
+				// last_pin_value = get_pin_value(node->output_pins[i],cycle-1);
+				// Pin values for cycle-1 were not correct on Wave boundaries. Needed to store it in ace object.
+				signed char last_pin_value = node->output_pins[i]->ace_info->value;
 
-	      // # of ones
-	      if ( pin_value == 1 ) {
- 		node->output_pins[i]->ace_info->num_ones += pin_value;
- 	      }
+				// # of ones
+				if ( pin_value == 1 ) 
+				{
+					node->output_pins[i]->ace_info->num_ones += pin_value;
+				}
 
-	      // # of toggles
-	      if ( ( pin_value != last_pin_value ) && (last_pin_value != -1 ) ) {
-		node->output_pins[i]->ace_info->num_toggles++;
-	      }
-	      node->output_pins[i]->ace_info->value = pin_value;
-	    }
-	   }
+				// # of toggles
+				if ( ( pin_value != last_pin_value ) && (last_pin_value != -1 ) ) 
+				{
+					node->output_pins[i]->ace_info->num_toggles++;
+					node->output_pins[i]->coverage++;
+					if(node->output_pins[i]->coverage < 2)
+						covered = false;
+				}
+
+				node->output_pins[i]->ace_info->value = pin_value;
+			}
+		}
 	}
+	if(covered || skip_node_from_coverage)
+		node->covered = true;
 }
 
 
@@ -1177,32 +1136,10 @@ static void compute_and_store_value(nnode_t *node, int cycle)
 static int get_num_covered_nodes(stages_t *s)
 {
 	int covered_nodes = 0;
-	int i;
-	for(i = 0; i < s->count; i++)
-	{
-		int j;
-		for (j = 0; j < s->counts[i]; j++)
-		{	/*
-			 * To count as being covered, every pin should resolve, and
-			 * make at least one transition from one binary value to another
-			 * and back. (That's three transitions total.)
-			 */
-			nnode_t *node = s->stages[i][j];
-			int k;
-			int covered = TRUE;
-			for (k = 0; k < node->num_output_pins; k++)
-			{
-				if (node->output_pins[k]->coverage < 3)
-				{
-					covered = FALSE;
-					break;
-				}
-			}
+	for(int i = 0; i < s->count; i++)
+		for (int j = 0; j < s->counts[i]; j++)
+			covered_nodes += (s->stages[i][j]->covered)? 1: 0;
 
-			if (covered)
-				covered_nodes++;
-		}
-	}
 	return covered_nodes;
 }
 
@@ -1506,15 +1443,15 @@ nnode_t **get_children_of_nodepin(nnode_t *node, int *num_children, int output_p
  * and values so that the values don't have to be propagated
  * through the net.
  */
-static inline char initialize_pin(npin_t *pin, int cycle)
+static inline void initialize_pin(npin_t *pin)
 {
 	// Initialise the driver pin if this pin is not the driver.
 	if (pin->net && pin->net->driver_pin && pin->net->driver_pin != pin)
-		initialize_pin(pin->net->driver_pin, cycle);
+		initialize_pin(pin->net->driver_pin);
 
 	// If initialising the driver initialised this pin, we're OK to return.
-	if (pin->cycle || pin->values)
-		return pin->values[cycle%SIM_WAVE_LENGTH];
+	if (pin->values)
+		return;
 
 
 	if (pin->net)
@@ -1535,15 +1472,13 @@ static inline char initialize_pin(npin_t *pin, int cycle)
 	{
 		pin->values = (signed char *)vtr::malloc(SIM_WAVE_LENGTH * sizeof(signed char));
 		pin->cycle  = (int *)vtr::malloc(sizeof(int));
+		memset(
+			pin->values, 
+			(pin->node && pin->node->has_initial_value)? pin->node->initial_value: global_args.sim_initial_value,
+			SIM_WAVE_LENGTH
+		);
+		*(pin->cycle) = -1;
 	}
-	
-	memset(
-		pin->values, 
-		(pin->node && pin->node->has_initial_value)? pin->node->initial_value: global_args.sim_initial_value,
-		SIM_WAVE_LENGTH
-	);
-	*(pin->cycle) = -1;
-	return pin->values[cycle%SIM_WAVE_LENGTH];
 }
 
 /*
@@ -1555,7 +1490,9 @@ static inline char initialize_pin(npin_t *pin, int cycle)
 static void update_pin_value(npin_t *pin, signed char value, int cycle)
 {
 	init_write(pin);
-	initialize_pin(pin, cycle);	
+	if(!pin->values)
+		initialize_pin(pin);
+	
 	pin->values[cycle%SIM_WAVE_LENGTH] = value;
 	*(pin->cycle) = cycle;
 	close_writer(pin);
@@ -1566,33 +1503,21 @@ static void update_pin_value(npin_t *pin, signed char value, int cycle)
  */
 signed char get_pin_value(npin_t *pin, int cycle)
 {
-	signed char to_return = -1;
+	signed char to_return = -127;
 	if(!pin)
 		return to_return;
 
-	if(cycle == 0 || !pin->values)
+	if(!pin->values)
 	{
 		init_write(pin);
-		to_return = initialize_pin(pin, cycle);
+		initialize_pin(pin);
 		close_writer(pin);
 	}
-	else
-	{
-		init_read(pin);
-	 	to_return = pin->values[cycle%SIM_WAVE_LENGTH];
-	 	close_reader(pin);
-	}
+	init_read(pin);
+	to_return = pin->values[cycle%SIM_WAVE_LENGTH];
+	close_reader(pin);
 
 	return to_return;
-}
-
-signed char edge_type(npin_t *pin, int cycle)
-{
-	init_read(pin);
-	signed char cur_value	= (cycle == 0)? !CLOCK_INITIAL_VALUE: 			pin->values[cycle%SIM_WAVE_LENGTH];
-	signed char prev_value	= (cycle == 0)? initialize_pin(pin, cycle): 	pin->values[(cycle-1)%SIM_WAVE_LENGTH];
-	close_reader(pin);
-	return cur_value - prev_value;
 }
 
 /*
@@ -1618,9 +1543,7 @@ static void compute_flipflop_node(nnode_t *node, int cycle)
 	oassert(node->num_output_pins == 1);
 	oassert(node->num_input_pins  == 2);
 
-	npin_t *D_pin      = node->input_pins[0];
 	npin_t *clock_pin  = node->input_pins[1];
-	npin_t *output_pin = node->output_pins[0];
 
 	// update the flip-flop from the input value of the previous cycle.
 	bool trigger =	(node->edge_type == FALLING_EDGE_SENSITIVITY)?	is_negedge(clock_pin, cycle):
@@ -1629,9 +1552,9 @@ static void compute_flipflop_node(nnode_t *node, int cycle)
 					(node->edge_type == ACTIVE_LOW_SENSITIVITY)?	is_low(clock_pin, cycle):
 					/*ASYNCHRONOUS_SENSITIVITY (default)*/			is_edge(clock_pin,cycle);
 	
-	npin_t *update_pin_to = (trigger)?	D_pin:	output_pin;
+	signed char update_pin_to = (trigger)?	 get_pin_value(node->input_pins[0],cycle):	get_pin_value(node->output_pins[0],cycle-1);
 
-	update_pin_value(output_pin, get_pin_value(update_pin_to, cycle-1), cycle);
+	update_pin_value(node->output_pins[0], update_pin_to, cycle);
 }
 
 /*

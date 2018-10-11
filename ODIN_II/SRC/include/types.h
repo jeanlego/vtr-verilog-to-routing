@@ -503,6 +503,7 @@ struct nnode_t_t
 	signed char has_initial_value; // initial value assigned?
 	signed char initial_value; // initial net value
 	edge_type_e edge_type; //
+	bool covered =false;
 
 	//Generic gate output
 	unsigned char generic_output; //describes the output (1 or 0) of generic blocks
