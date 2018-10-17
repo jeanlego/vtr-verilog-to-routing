@@ -18,6 +18,9 @@ CURRENT_BITSIZE=0
 
 OUTPUT_SEPARATOR="~"
 
+NB_OF_PROC=1
+#NB_OF_PROC=$(nproc --all)
+
 
 ######### inital cleanup ##########
 
@@ -59,7 +62,7 @@ declare -a WEIGTH_LIST
 WEIGTH_LIST[$critical_path_delay]="1.0"
 WEIGTH_LIST[$logic_block_area_total]="1.0"
 WEIGTH_LIST[$total_power]="1.0"
-WEIGTH_LIST[$total_dyn]="100.0"
+WEIGTH_LIST[$total_dyn]="1.0"
 
 
 #################################################
@@ -188,7 +191,7 @@ function build_task() {
 #$1
 function run_parralel_tasks() {
 
-  find $VTR_HOME_DIR/$TRACKER_DIR/test_$1/ -maxdepth 2 -mindepth 2 | grep default${OUTPUT_SEPARATOR}${CURRENT_BITSIZE} | xargs -P$(nproc) -I test_dir /bin/bash -c \
+  find $VTR_HOME_DIR/$TRACKER_DIR/test_$1/ -maxdepth 2 -mindepth 2 | grep default${OUTPUT_SEPARATOR}${CURRENT_BITSIZE} | xargs -P${NB_OF_PROC} -I test_dir /bin/bash -c \
   '
   TEST_DIR=test_dir
   mkdir -p $TEST_DIR/../OUTPUT
@@ -206,6 +209,9 @@ function run_parralel_tasks() {
     -g 100 \
     -sim_dir $TEST_DIR/../OUTPUT/ &>> $TEST_DIR/run_result
 
+  $VTR_HOME_DIR/blifexplorer/blifexplorer $TEST_DIR/odin.blif $VTR_HOME_DIR/ODIN_II/usefull_tools/soft_logic_gen/track_completed/image &>> /dev/null
+  sleep 2
+
   /bin/perl $VTR_HOME_DIR/vtr_flow/scripts/run_vtr_flow.pl \
   $TEST_DIR/odin.blif $TEST_DIR/arch.xml \
   -power \
@@ -219,10 +225,11 @@ function run_parralel_tasks() {
 
   tail -n +2 $TEST_DIR/run/parse_results.txt > $TEST_DIR/../${TEST_DIR##*/}.results
   echo "INITIALIZED"
+
   '
 
   # #parralel this START
-  find $VTR_HOME_DIR/$TRACKER_DIR/test_$1/ -maxdepth 2 -mindepth 2 | grep -v default${OUTPUT_SEPARATOR}${CURRENT_BITSIZE} | grep -v OUTPUT | xargs -P$(nproc) -I test_dir /bin/bash -c \
+  find $VTR_HOME_DIR/$TRACKER_DIR/test_$1/ -maxdepth 2 -mindepth 2 | grep -v default${OUTPUT_SEPARATOR}${CURRENT_BITSIZE} | grep -v OUTPUT | xargs -P${NB_OF_PROC} -I test_dir /bin/bash -c \
   '
   TEST_DIR=test_dir
   echo "$VTR_HOME_DIR/ODIN_II/odin_II \
@@ -255,6 +262,9 @@ function run_parralel_tasks() {
       -temp_dir $TEST_DIR/run \
       -starting_stage abc &>> $TEST_DIR/run_result
 
+  $VTR_HOME_DIR/blifexplorer/blifexplorer $TEST_DIR/odin.blif $VTR_HOME_DIR/ODIN_II/usefull_tools/soft_logic_gen/track_completed/image &>> /dev/null
+  sleep 2
+
   my_dir=$(readlink -f $TEST_DIR)
   parent_dir=$(readlink -f $TEST_DIR/..)
   test_bit=$(readlink -f $TEST_DIR/../..)
@@ -267,9 +277,6 @@ function run_parralel_tasks() {
       tail -n +2 $TEST_DIR/run/parse_results.txt > $TEST_DIR/../${TEST_DIR##*/}.results
       printf "<${test_bit##*/}-${parent_dir##*/}>\t<${my_dir##*/}> \t\t... PASS\n"
   else
-      my_dir=$(readlink -f $TEST_DIR)
-      parent_dir=$(readlink -f $TEST_DIR/..)
-      test_bit=$(readlink -f $TEST_DIR/../..)
       mv $TEST_DIR/run_result $TEST_DIR/../../../failures/${test_bit##*/}${parent_dir##*/}_${my_dir##*/}
       printf "<${test_bit##*/}_${parent_dir##*/}>\t<${my_dir##*/}> \t\t... ERROR\n"
   fi
