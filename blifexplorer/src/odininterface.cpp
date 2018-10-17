@@ -48,7 +48,7 @@ int OdinInterface::startOdin()
 		"../ODIN_II/odin_ii", 												//	pass the odin location relative to blifexplorer
 		"--interractive_simulation",										//	prevent odin from freeing valuable information
         "-r", "7",															//	set simulation seed
-        "-sim_dir", "./OUTPUT/",												//	set simulation directory
+        "-sim_dir", "./temp/",												//	set simulation directory
         "-g", "10000",														//	set number of test vector
 		"-b", OdinInterface::myFilename.trimmed().toLocal8Bit().data()		//	pass the blif file
     };
@@ -149,7 +149,9 @@ void OdinInterface::setUpSimulation()
 int OdinInterface::simulateNextWave()
 {
     //TODO should we increment the wave ?
-    return single_step(sim_data, wave++);
+    single_step(sim_data, wave);
+    wave++;
+    return wave;
 }
 
 /*---------------------------------------------------------------------------------------------
@@ -171,18 +173,6 @@ int OdinInterface::getOutputValue(nnode_t* node, int outPin, int actstep)
     oassert(node);
     oassert(node->num_output_pins > outPin);
     return get_pin_value(node->output_pins[outPin],actstep);
-}
-
-/*---------------------------------------------------------------------------------------------
- * (function: setEdge)
- *-------------------------------------------------------------------------------------------*/
-void OdinInterface::setEdge(int i ){
-    if(i==-1)
-        OdinInterface::edge_output = "-E";
-    else if(i==0)
-        OdinInterface::edge_output = "-R";
-    else
-        OdinInterface::edge_output = "";
 }
 
 

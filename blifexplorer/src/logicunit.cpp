@@ -468,23 +468,24 @@ int LogicUnit::getOutValue(int pinNumber)
     know their output pin. If the connection requests a higher number
     than numbers available, add zeros.*/
     //FIXME read above
-    while(pinNumber>myOutVal.size()){
+    if(pinNumber <= 0)
+        return 0;
+
+    while(pinNumber >= myOutVal.size()){
         //add zeros until size is big enough in
         //case the list was not expanded yet.
-        QList<int> list;
-        myOutVal.append(list);
-        myOutVal[myOutVal.size()-1].append(0);
+        myOutVal.append(QList<int>({0}));
     }
 
     //append cycles if required
-    while(myCurrentCycle>=myOutVal[pinNumber-1].size()){
+    while(myCurrentCycle >= myOutVal[pinNumber-1].size()){
         //add zeros until size is big enough in
         //case the list was not expanded yet.
         myOutVal[pinNumber].append(0);
     }
 
     //pinNumber-1 as wire objects start numbering with 1 instead of 0
-    return myOutVal[pinNumber-1].at(myCurrentCycle);
+    return myOutVal[pinNumber-1][myCurrentCycle];
 }
 
 /*---------------------------------------------------------------------------------------------

@@ -53,7 +53,6 @@ public:
     int simulateNextWave();
     void endSimulation();
     int getOutputValue(nnode_t* node, int pin, int actstep);
-    void setEdge(int i);
 private:
     netlist_t *verilog_netlist;
     QHash<QString, nnode_t *> nodehash;

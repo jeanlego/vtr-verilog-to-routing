@@ -62,6 +62,8 @@ public:
     void setFont(const QFont &font);
     LogicUnit *addLogicUnit(QString name, LogicUnit::UnitType type,QPointF position);
     bool addConnection(LogicUnit *startUnit, LogicUnit *endUnit);
+    void printScene(QString filename);
+
 
 
 

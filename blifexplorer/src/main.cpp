@@ -39,6 +39,12 @@ int main(int argv, char *args[])
     mainWindow.setGeometry(100, 100, QApplication::desktop()->width()*0.9,
                            QApplication::desktop()->height()*0.9);
     mainWindow.show();
-
+    if(argv > 1)
+    {
+        QString blifInput(args[1]);
+        QString pngOutput(args[2]);
+        return mainWindow.openFileAndPrintWithOdinCMD(blifInput, pngOutput);
+    }
+    
     return app.exec();
 }

@@ -55,7 +55,8 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-   MainWindow();
+    MainWindow();
+    int openFileAndPrintWithOdinCMD(QString filein, QString fileout);
 
 private slots:
    // void backgroundButtonGroupClicked(QAbstractButton *button);
@@ -81,7 +82,6 @@ private slots:
     void handleFontChange();
     void itemSelected(QGraphicsItem *item);
     void about();
-    void openFileWithOdin();
     void setName();
     void findBlock();
     void selectAll();
@@ -92,10 +92,9 @@ private slots:
     void addChildrenToHighlighting();
     void showRelevantGraph();
     void expandCollapse();
+    void openFileWithOdin();
 
-    void setEdgeFall(bool);
-    void setEdgeRise(bool);
-    void setEdgeFallRise(bool);
+
 
 private:
     void createToolBox();
@@ -183,7 +182,7 @@ private:
     Container* myContainer;
 
     bool fileopen;
-    int actSimStep, maxSimStep;
+    int actSimStep;
     int activityBase;
 };
 #endif

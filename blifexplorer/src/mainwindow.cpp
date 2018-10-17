@@ -72,7 +72,7 @@ MainWindow::MainWindow()
     setUnifiedTitleAndToolBarOnMac(true);
 
     myContainer = new Container(scene);
-    actSimStep = 0;
+    actSimStep = -1;
     activityBase = 5000;
     fileopen = false;
 }
@@ -84,34 +84,37 @@ void MainWindow::simulationButtonGroupClicked(QAbstractButton* button)
 {
     QList<QAbstractButton *> buttons = simulationButtonGroup->buttons();
     foreach (QAbstractButton *myButton, buttons) {
-    if (myButton != button)
-        button->setChecked(false);
+        if (myButton != button)
+            button->setChecked(false);
     }
+
     QString text = button->text();
-    if(text == tr("Previous")){
-        actSimStep = actSimStep-1;
-        if(actSimStep<0){
-            actSimStep =0;
-        }
-        myContainer->showSimulationStep(actSimStep);
-    }else if(text == tr("Next")){
-        actSimStep = (actSimStep+1);//%myContainer->getMaxSimStep();
-        if(actSimStep>=myContainer->getMaxSimStep())
-        {
-            myContainer->simulateNextWave();
-        }
-        myContainer->showSimulationStep(actSimStep);
-    }else if(text == tr("Start")){
+
+    if(actSimStep == -1)
+    {
         //configure clocks
         configureClocks();
         //start simulation
         myContainer->startSimulator();
     }
 
+    if(text == tr("Previous"))
+        actSimStep = (actSimStep > 0) ? actSimStep -1 : actSimStep;
+    else if(text == tr("Next"))
+    {
+        if(actSimStep>=myContainer->getCurrentCycle())
+            actSimStep = myContainer->simulateNextWave();
+        else
+            actSimStep = actSimStep+1;
+    }
+    
+
+    myContainer->showSimulationStep(actSimStep);
+
     QString simstat = "";
     simstat.append(QString("%1").arg(actSimStep));
     simstat.append(" / ");
-    simstat.append(QString("%1").arg(myContainer->getMaxSimStep()));
+    simstat.append(QString("%1").arg(100000));
     fprintf(stderr,"simstep: %d\n", actSimStep);
 
     simstatLabel->setText(simstat);
@@ -461,39 +464,17 @@ void MainWindow::createToolBox()
             this, SLOT(simulationButtonGroupClicked(QAbstractButton*)));
 
     QGridLayout* simulationLayout = new QGridLayout;
-    simulationLayout->addWidget(createSimulationCellWidget(tr("Start"),
-                ":/images/start.png"), 0, 0);
     simulationLayout->addWidget(createSimulationCellWidget(tr("Previous"),
-                ":/images/previous.png"), 1, 0);
+                ":/images/previous.png"), 0, 0);
     simulationLayout->addWidget(createSimulationCellWidget(tr("Next"),
-                ":/images/next.png"), 2, 0);
-
-
-    //add edge control for the simulation
-    edgeRadioLayout = new QVBoxLayout;
-    QGroupBox* groupBox = new QGroupBox(tr("Show Edge"));
-    QRadioButton* radFall = new QRadioButton(tr("F"));
-    QRadioButton* radRise = new QRadioButton(tr("R"));
-    QRadioButton* radFallRise = new QRadioButton(tr("RF"));
-    radFallRise->setChecked(true);
-    edgeRadioLayout->addWidget(radFall);
-    edgeRadioLayout->addWidget(radRise);
-    edgeRadioLayout->addWidget(radFallRise);
-    groupBox->setLayout(edgeRadioLayout);
-    simulationLayout->addWidget(groupBox,3,0);
-    connect(radFall, SIGNAL(toggled(bool)),
-        this, SLOT(setEdgeFall(bool)));
-    connect(radRise, SIGNAL(toggled(bool)),
-        this, SLOT(setEdgeRise(bool)));
-    connect(radFallRise, SIGNAL(toggled(bool)),
-        this, SLOT(setEdgeFallRise(bool)));
+                ":/images/next.png"), 1, 0);
 
     QLabel* legend = new QLabel();
     QSize size(100,100);
     QPixmap* pixmap = new QPixmap(size);
     pixmap->convertFromImage(QImage(":/images/legend.png"));
     legend->setPixmap(*pixmap);
-    simulationLayout->addWidget(legend,4,0);
+    simulationLayout->addWidget(legend,2,0);
 
     simStatLayout = new QGridLayout;
     simstatLabel = new QLabel();
@@ -501,7 +482,7 @@ void MainWindow::createToolBox()
 
     QWidget *simwidget = new QWidget;
     simwidget->setLayout(simStatLayout);
-    simulationLayout->addWidget(simwidget,5,0);
+    simulationLayout->addWidget(simwidget,3,0);
 
     simulationLayout->setRowStretch(6,10);
     simulationLayout->setColumnStretch(2,10);
@@ -922,6 +903,27 @@ QIcon MainWindow::createColorIcon(QColor color)
     return QIcon(pixmap);
 }
 
+int MainWindow::openFileAndPrintWithOdinCMD(QString filein, QString fileout){
+    actBlifFilename = filein;
+    myContainer->setFilename(actBlifFilename);
+    int ok = myContainer->readInFileOdinOnly();
+
+    if(ok == -1){
+        printf("unable to open file %s\nexiting\n", qPrintable(actBlifFilename));
+        return -1;
+    }
+
+    myContainer->arrangeContainer();
+    QString title = "Circuit Explorer - ";
+    title.append(actBlifFilename);
+    setWindowTitle(title);
+    view->centerOn(0,0);
+    fileopen = true;
+    scene->printScene(fileout);
+    return 0;
+}
+
+
 /*---------------------------------------------------------------------------------------------
  * (function: openFileWithOdin)
  *-------------------------------------------------------------------------------------------*/
@@ -943,22 +945,20 @@ void MainWindow::openFileWithOdin(){
     if(ok == -1){
         //An error occured
         QMessageBox msgBox(QMessageBox::Warning, tr("No Structure Found in File"),
-                           "The file you tried to explore does not contain any structures or could not be opened. Please select another file."
-                           , 0, this);
+                        "The file you tried to explore does not contain any structures or could not be opened. Please select another file."
+                        , 0, this);
         msgBox.addButton(tr("Open &Again"), QMessageBox::AcceptRole);
         msgBox.addButton(tr("&Continue"), QMessageBox::RejectRole);
         if (msgBox.exec() == QMessageBox::AcceptRole)
             openFileWithOdin();
-
     }else{
-    myContainer->arrangeContainer();
-    QString title = "Circuit Explorer - ";
-    title.append(actBlifFilename);
-    setWindowTitle(title);
-    view->centerOn(0,0);
-    fileopen = true;
+        myContainer->arrangeContainer();
+        QString title = "Circuit Explorer - ";
+        title.append(actBlifFilename);
+        setWindowTitle(title);
+        view->centerOn(0,0);
+        fileopen = true;
     }
-
 }
 
 /*---------------------------------------------------------------------------------------------
@@ -1308,33 +1308,6 @@ QWidget * MainWindow::createPowerCellWidget(const QString &text, const QString &
     return widget;
 }
 
-/*---------------------------------------------------------------------------------------------
- * (function: setEdgeFall)
- *-------------------------------------------------------------------------------------------*/
-void MainWindow::setEdgeFall(bool val){
-    if(val){
-        myContainer->setEdge(1);
-    }
-}
-
-/*---------------------------------------------------------------------------------------------
- * (function: setEdgeRise)
- *-------------------------------------------------------------------------------------------*/
-void MainWindow::setEdgeRise(bool val){
-    if(val){
-        myContainer->setEdge(0);
-    }
-}
-
-/*---------------------------------------------------------------------------------------------
- * (function: setEdgeFallRise)
- *-------------------------------------------------------------------------------------------*/
-void MainWindow::setEdgeFallRise(bool val){
-    if(val){
-        myContainer->setEdge(-1);
-    }
-}
-
 void MainWindow::activityCycleCountChangedChanged(int number)
 {
     activityBase = number;
@@ -1374,5 +1347,3 @@ void MainWindow::expandCollapse()
             }
         }
 }
-
-

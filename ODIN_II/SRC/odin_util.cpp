@@ -752,26 +752,25 @@ char *find_substring(char *src,const char *sKey,int flag)
 {
 	// flag == 1 first half, flag == 2 second half
 
-	std::string tmp;
-	std::string key;
 	char *line;
 	line = vtr::strdup(src);
-	tmp = line;
-	key = sKey;
+	std::string tmp = line;
+	std::string key = sKey;
 	std::size_t found = tmp.find(key);
+	if(found == std::string::npos)
+		return line;
+
 	switch(flag)
 	{
 		case 1:
-   			tmp = tmp.substr(0,found-1);
+   			odin_sprintf(line,"%s",tmp.substr(0,found).c_str());
 			break;
 		case 2:
-   			tmp = tmp.substr(found,tmp.length());
+   			odin_sprintf(line,"%s",tmp.substr(found).c_str());
 			break;
-
 		default:
-			return line;
+			break;
 	}
-	odin_sprintf(line,"%s",tmp.c_str());
 
 	return line;
 }

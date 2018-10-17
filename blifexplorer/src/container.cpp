@@ -31,9 +31,7 @@ Container::Container(ExplorerScene* scene)
     maxcountPerLayer = 0;
     myOdin = new OdinInterface();
     odinStarted = false;
-    simOffset = 0;
-    maxSimStep = 0;
-    actSimStep = 0;
+    currentCycle = 0;
 }
 
 /*---------------------------------------------------------------------------------------------
@@ -216,7 +214,7 @@ void Container::copySimCyclesIntoNodes()
 {   //for each cycle which was simulated         //int value;
     //int i;, copy the values into the nodes
     int cycle;
-    for(cycle=0+simOffset;cycle<maxSimStep;cycle++){
+    for(cycle=0;cycle<currentCycle;cycle++){
         QHash<QString, nnode_t *>::const_iterator blockIterator = odinTable.constBegin();
 
         while(blockIterator != odinTable.constEnd()){
@@ -832,19 +830,20 @@ LogicUnit * Container::getReferenceToUnit(QString name)
 }
 
 /*---------------------------------------------------------------------------------------------
- * (function: getMaxSimStep)
+ * (function: getCurrentCycle)
  *-------------------------------------------------------------------------------------------*/
-int Container::getMaxSimStep()
+int Container::getCurrentCycle()
 {
-    return maxSimStep;
+    return currentCycle;
 }
 
-/*---------------------------------------------------------------------------------------------
- * (function: getActSimiStep)
- *-------------------------------------------------------------------------------------------*/
-int Container::getActSimStep()
+int Container::simulateNextWave()
 {
-    return actSimStep;
+ 
+    currentCycle = myOdin->simulateNextWave();
+    copySimCyclesIntoNodes();
+
+    return currentCycle;
 }
 
 /*---------------------------------------------------------------------------------------------
@@ -853,24 +852,10 @@ int Container::getActSimStep()
 int Container::startSimulator()
 {
     myOdin->setUpSimulation();
-    maxSimStep = myOdin->simulateNextWave();
-    copySimCyclesIntoNodes();
-    /*
-    myOdin->simulateNextWave();
-    myOdin->endSimulation();
-    copySimCyclesIntoNodes();*/
+    Container::simulateNextWave();
     return 0;
 }
 
-int Container::simulateNextWave()
-{
-    int success = -1;
-    simOffset = maxSimStep;
-    maxSimStep = myOdin->simulateNextWave();
-    copySimCyclesIntoNodes();
-
-    return success;
-}
 
 void Container::resetAllHighlights()
 {
@@ -953,11 +938,9 @@ void Container::getActivityInformation()
  *-------------------------------------------------------------------------------------------*/
 void Container::showSimulationStep(int cycle)
 {
-    actSimStep = cycle;
-
     //if current step is bigger than the last cycle, create new values
-    if(actSimStep>maxSimStep){
-        maxSimStep = myOdin->simulateNextWave();
+    while(cycle>currentCycle){
+        currentCycle = myOdin->simulateNextWave();
         copySimCyclesIntoNodes();
     }
 
@@ -969,22 +952,6 @@ void Container::showSimulationStep(int cycle)
          LogicUnit* visNode = unithashtable[name];
          visNode->setCurrentCycle(cycle);
          ++blockIterator;
-    }
-    //actSimStep = (simOffset+1)%64;
-}
-
-/*---------------------------------------------------------------------------------------------
- * (function: setEdge)
- *-------------------------------------------------------------------------------------------*/
-void Container::setEdge(int i)
-{
-    if(odinStarted)
-    {
-        myOdin->setEdge(i);
-    }
-    else
-    {
-        std::cout << "unable to set edge since odin has not been started";
     }
 }
 

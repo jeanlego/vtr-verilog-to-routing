@@ -49,11 +49,9 @@ public:
     int readInFileOdinOnly();
     QHash<QString,LogicUnit *> findByName(QString name);
     LogicUnit *getReferenceToUnit(QString name);
-    int getMaxSimStep();
-    int getActSimStep();
+    int getCurrentCycle();
     int startSimulator();
     void showSimulationStep(int cycle);
-    void setEdge(int i);
     int simulateNextWave();
     void resetAllHighlights();
     void showActivity();
@@ -99,7 +97,7 @@ private:
     QHash<QString, nnode_t *> odinTable;
     int myItemcount;
     QHash<QString, LogicUnit *> completeNodes;
-    int simOffset, maxSimStep, actSimStep;
+    int currentCycle, actSimStep;
     QList<LogicUnit*> clocks;
 
     };

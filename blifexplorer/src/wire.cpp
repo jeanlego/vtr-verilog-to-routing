@@ -41,8 +41,8 @@ Wire::Wire(LogicUnit *startUnit, LogicUnit *endUnit,
     mySafeColor = Qt::black;
 
     //The values for an turned on and turned off wire
-   // wireOff = QColor(0,0,255);
-    wireOn = QColor(255,0,0);
+    //wireOff = Qt::blue;
+    wireOn = Qt::red;
 
     //penwidth can be used to show "active" wires after simulation
     myPenwidth = 3;
@@ -148,13 +148,11 @@ LogicUnit * Wire::endUnit() const
 void Wire::updatePosition()
 {
 
-    if(!myStartUnit->isVisible() && !startFromModule()){
-        setVisible(false);
-    }else if(!myEndUnit->isVisible() && !endOnModule()){
-        setVisible(false);
-    }else{
+    if((myStartUnit->isVisible() || startFromModule())
+    && (myEndUnit->isVisible() || endOnModule()))
         setVisible(true);
-    }
+    else
+        setVisible(false);
 
     LogicUnit* start;
     LogicUnit* end;
@@ -269,7 +267,7 @@ void Wire::updateWireStatus()
         //myPenwidth = wireOff;
         myColor = mySafeColor;
     } else if(status == 1){
-        myColor = QColor(wireOn.red(),mySafeColor.green(),mySafeColor.blue());;
+        myColor = QColor(wireOn.red(),mySafeColor.green(),mySafeColor.blue());
         //myColor = mySafeColor;
     }else{
         //myPenwidth = wireOn;

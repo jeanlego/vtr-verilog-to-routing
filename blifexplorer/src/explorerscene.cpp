@@ -280,5 +280,21 @@ bool ExplorerScene::addConnection(LogicUnit *startUnit, LogicUnit *endUnit)
     return true;
 }
 
+/**
+ * print the scene to png
+ */
+void ExplorerScene::printScene(QString filename)
+{
+    this->clearSelection();
+    this->setSceneRect(this->itemsBoundingRect());  
+    QImage image(this->sceneRect().size().toSize(), QImage::Format_ARGB32); 
+    image.fill(Qt::transparent);                       
+
+    QPainter painter(&image);
+    this->render(&painter);
+    filename += ".png";
+    image.save(filename);
+}
+
 
 
