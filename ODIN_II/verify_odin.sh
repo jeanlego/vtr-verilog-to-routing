@@ -10,7 +10,7 @@ HOLD_LOW_RESET="-L reset rst"
 ADDER_DEFINITION="--adder_type default"
 
 #if you want to change the default number of vectors to generate
-GENERATE_VECTOR_COUNT="-g 100"
+GENERATE_VECTOR_COUNT="-g 100 --best_coverage"
 
 DEFAULT_ARCH="-a ../libs/libarchfpga/arch/sample_arch.xml"
 
@@ -25,6 +25,8 @@ then
 	echo "Trying to run benchmark on $NB_OF_PROC processes"
 fi
 
+REGENERATE_OUTPUT=0
+REGENERATE_BENCH=0
 
 function init_temp() {
 	last_run=$(find regression_test/run* -maxdepth 0 -type d 2>/dev/null | tail -1 )
@@ -116,13 +118,13 @@ function sim() {
 			[ "_$with_blif" == "_1" ] && [ "_$with_arch" == "_1" ] &&
 				blif_command="${blif_command} ${DEFAULT_ARCH}"
 
-			if [ "_$with_input_vector" == "_1" ]; then
+			if [ "_$with_input_vector" == "_1" ] && [ "_$REGENERATE_BENCH" != "_1" ]; then
 				verilog_command="${verilog_command} -t ${benchmark_dir}/${test_name}_input"
 
 				[ "_$with_blif" == "_1" ] &&
 					blif_command="${blif_command} -t ${benchmark_dir}/${test_name}_input"
 				
-				if [ "_$with_output_vector" == "_1" ]; then
+				if [ "_$with_output_vector" == "_1" ] && [ "_$REGENERATE_OUTPUT" != "_1" ]; then
 					verilog_command="${verilog_command} -T ${benchmark_dir}/${test_name}_output"
 
 					[ "_$with_blif" == "_1" ] &&
@@ -156,50 +158,22 @@ function sim() {
 			eval $(cat "${tests}/log" | tr "\n" " ")
 		done
 	fi
-}
 
-function regenerate_bench() {
-	threads=$1
-	bench_type=$2
-	
-	benchmark_dir=regression_test/benchmark/${bench_type}
-
-	for benchmark in ${benchmark_dir}/*.v
-	do
-		basename=${benchmark%.v}
-		test_name=${basename##*/}
-		DIR="${new_run}/${bench_type}/$test_name"
-
-		#build commands
-		mkdir -p $DIR
-		echo "${EXEC} ${ADDER_DEFINITION} -V ${benchmark_dir}/${test_name}.v ${HOLD_LOW_RESET} ${GENERATE_VECTOR_COUNT} --best_coverage -sim_dir ${DIR}/ &>> ${DIR}/log \
-			&& echo --- PASSED == ${bench_type}/$test_name \
-			|| (echo -X- FAILED == ${bench_type}/$test_name \
-				&& echo ${bench_type}/$test_name >> ${new_run}/failure.log)" > ${DIR}/log
-	done
-
-
-	if [ $1 -gt "1" ]
+	if [ "_$REGENERATE_BENCH" == "_1" ] || [ "_$REGENERATE_OUTPUT" == "_1" ]
 	then
-		find ${new_run}/${bench_type}/ -maxdepth 1 -mindepth 1 | xargs -n1 -P$1 -I test_dir /bin/bash -c \
-			'eval $(cat "test_dir/log" | tr "\n" " ")'
-	else
+		#rename input and output vectors and move to vector directory
+		mkdir -p ${new_run}/VECTORS/
 		for tests in ${new_run}/${bench_type}/*; do 
-			eval $(cat "${tests}/log" | tr "\n" " ")
+			test_name=${tests##*/}
+			if [ -e ${tests}/input_vectors ]; then
+				cp ${tests}/input_vectors ${new_run}/VECTORS/${test_name}_input
+				cp ${tests}/output_vectors ${new_run}/VECTORS/${test_name}_output
+				echo -e "$(cat ${tests}/log | grep Coverage: | cut -d '(' -f2 | cut -d ')' -f1) <= ${test_name} " >> ${new_run}/VECTORS/report.coverage
+			fi
 		done
 	fi
-
-	#rename input and output vectors and delete all directories
-	mkdir -p ${new_run}/VECTORS/
-	for tests in ${new_run}/${bench_type}/*; do 
-		test_name=${tests##*/}
-		if [ -e ${tests}/input_vectors ]; then
-			cp ${tests}/input_vectors ${new_run}/VECTORS/${test_name}_input
-			cp ${tests}/output_vectors ${new_run}/VECTORS/${test_name}_output
-			echo -e "$(cat ${tests}/log | grep Coverage: | cut -d '(' -f2 | cut -d ')' -f1) <= ${test_name} " >> ${new_run}/VECTORS/report.coverage
-		fi
-	done
 }
+
 
 #1				#2
 #benchmark dir	N_trhead
@@ -298,6 +272,19 @@ function operators_test() {
 
 START=$(date +%s%3N)
 
+case $3 in 
+	"generate_output")
+		echo regenerating output vectors
+		REGENERATE_OUTPUT=1
+		;;
+
+	"generate_bench")
+		echo regenerating input and output vectors
+		REGENERATE_BENCH=1
+		;;
+esac
+
+
 case $1 in
 
 	"operators")
@@ -333,11 +320,6 @@ case $1 in
 	"other")
 		init_temp
 		other_test $NB_OF_PROC
-		;;
-
-	"regenerate_bench")
-		init_temp
-		regenerate_bench $NB_OF_PROC $3
 		;;
 
 	"full_suite")

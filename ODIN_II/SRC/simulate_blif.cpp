@@ -37,6 +37,8 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 #define CLOCK_INITIAL_VALUE 1
 
+int num_of_clock;
+
 #define is_clock_node(node)	( (node->type == CLOCK_NODE) || (std::string(node->name) == "top^clk") ) // Strictly for memories.
 #define get_edge_type(pin, cycle) (get_pin_value(pin, cycle) - get_pin_value(pin, cycle-1))
 #define is_posedge(pin, cycle) 	(get_edge_type(pin,cycle) > 0)
@@ -105,7 +107,7 @@ static int verify_lines(lines_t *l);
 static void free_lines(lines_t *l);
 
 static int find_portname_in_lines(char* port_name, lines_t *l);
-static lines_t *create_lines(netlist_t *netlist, int type, bool initial);
+static lines_t *create_lines(netlist_t *netlist, int type);
 
 static void add_test_vector_to_lines(test_vector *v, lines_t *l, int cycle);
 static void assign_node_to_line(nnode_t *node, lines_t *l, int type, int single_pin);
@@ -161,6 +163,8 @@ sim_data_t *init_simulation(netlist_t *netlist)
 	number_of_workers = 1;
 	found_best_time = false;
 
+	num_of_clock = 0;
+
 	sim_data_t *sim_data = (sim_data_t *)vtr::malloc(sizeof(sim_data_t));
 
 	sim_data->netlist = netlist;
@@ -171,11 +175,11 @@ sim_data_t *init_simulation(netlist_t *netlist)
 	process_inputed_clock_ratios();
 
 	// Create and verify the lines.
-	sim_data->input_lines = create_lines(netlist, INPUT, false);
+	sim_data->input_lines = create_lines(netlist, INPUT);
 	if (!verify_lines(sim_data->input_lines))
 		error_message(SIMULATION_ERROR, 0, -1, "Input lines could not be assigned.");
 
-	sim_data->output_lines = create_lines(netlist, OUTPUT, false);
+	sim_data->output_lines = create_lines(netlist, OUTPUT);
 	if (!verify_lines(sim_data->output_lines))
 		error_message(SIMULATION_ERROR, 0, -1, "Output lines could not be assigned.");
 
@@ -2067,8 +2071,8 @@ static void compute_single_port_memory(nnode_t *node, int cycle)
 	// On the rising edge, write the memory.
 	if (posedge)
 	{
-		int we = get_pin_value(signals->we, cycle - 1);
-		long address = compute_memory_address(signals->addr, cycle - 1);
+		int we = get_pin_value(signals->we, cycle);
+		long address = compute_memory_address(signals->addr, cycle);
 		char address_ok = (address != -1)?1:0;
 
 		int i;
@@ -2079,7 +2083,7 @@ static void compute_single_port_memory(nnode_t *node, int cycle)
 
 			// If write is enabled, copy the input to memory.
 			if (address_ok && we)
-				node->memory_data[bit_address] = get_pin_value(signals->data->pins[i],cycle-1);
+				node->memory_data[bit_address] = get_pin_value(signals->data->pins[i],cycle);
 		}
 	}
 
@@ -2138,10 +2142,10 @@ static void compute_dual_port_memory(nnode_t *node, int cycle)
 
 			// Write to the memory
 			if (address1_ok && we1)
-				node->memory_data[bit_address1] = get_pin_value(signals->data1->pins[i], cycle-1);
+				node->memory_data[bit_address1] = get_pin_value(signals->data1->pins[i], cycle);
 
 			if (address2_ok && we2)
-				node->memory_data[bit_address2] = get_pin_value(signals->data2->pins[i], cycle-1);
+				node->memory_data[bit_address2] = get_pin_value(signals->data2->pins[i], cycle);
 		}
 	}
 
@@ -2522,7 +2526,7 @@ static void insert_pin_into_line(npin_t *pin, int pin_number, line_t *line, int 
  * (INPUT or OUTPUT) to a line_t each. It stores them in a
  * lines_t struct and returns a pointer to it.
  */
-static lines_t *create_lines(netlist_t *netlist, int type, bool initial)
+static lines_t *create_lines(netlist_t *netlist, int type)
 {
 	if(type != OUTPUT && type != INPUT)
 		return NULL;
@@ -2530,7 +2534,6 @@ static lines_t *create_lines(netlist_t *netlist, int type, bool initial)
 	lines_t *l = (lines_t *)vtr::malloc(sizeof(lines_t));
 	l->lines = 0;
 	l->count = 0;
-	l->num_of_clock = 0;
 
 	int num_nodes   = (type == INPUT)?netlist->num_top_input_nodes:netlist->num_top_output_nodes;
 	nnode_t **nodes = (type == INPUT)?netlist->top_input_nodes    :netlist->top_output_nodes;
@@ -2554,9 +2557,8 @@ static lines_t *create_lines(netlist_t *netlist, int type, bool initial)
 		 **/
 		if(is_clock_node(node) && type == INPUT)
 		{
-			l->num_of_clock++;
-			if(initial)
-				set_clock_ratio(l->num_of_clock,node);
+			num_of_clock++;
+				set_clock_ratio(num_of_clock,node);
 		}
 
 		vtr::free(port_name);
@@ -2825,13 +2827,16 @@ static test_vector *parse_test_vector(char *buffer)
  *
  * If you want better randomness, call srand at some point.
  */
-static bool contains_a_substr_of_name(std::vector<std::string> held, std::string& name)
+static bool contains_a_substr_of_name(std::vector<std::string> held, const char *name_in)
 {
-	if(!name.size())
+	if(!name_in)
 		return false;
 	
 	if(held.empty())
 		return false;
+
+	std::string name = name_in;
+	std::transform(name.begin(), name.end(), name.begin(), ::tolower);
 
 	for(std::string sub_str: held)
 	{
@@ -2859,36 +2864,41 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 		v->values[v->count] = 0;
 		v->counts[v->count] = 0;
 
-		for (int j = 0; j < sim_data->input_lines->lines[i]->number_of_pins; j++)
+		line_t *line = sim_data->input_lines->lines[i];
+		for (int j = 0; j < line->number_of_pins; j++)
 		{
-			signed char value = -1;
-			npin_t *related_pin = NULL;
-			signed char clock_ratio = -1;
-			std::string name = sim_data->input_lines->lines[i]->name;
-			std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+			//default
+			signed char value = (rand() % 2);
 
-			if(sim_data->input_lines->lines[i]->number_of_pins > 0)
-			{
-				related_pin = sim_data->input_lines->lines[i]->pins[0];
-				clock_ratio = get_clock_ratio(related_pin->node);
-			}
+			npin_t *pin = line->pins[j];
+			signed char clock_ratio = get_clock_ratio(pin->node);
 
 			/********************************************************
 			 * if it is a clock node, use it's ratio to generate a cycle
 			 */
-			if(clock_ratio)
+			if(clock_ratio > 0)
 			{
-				signed char previous_cycle_clock_value = get_pin_value(related_pin, cycle-1);
-				if((cycle%(clock_ratio)) == 0)
-					value = !previous_cycle_clock_value;
+				if(!cycle)
+					value = CLOCK_INITIAL_VALUE;
 				else
-					value = previous_cycle_clock_value;
+				{
+					signed char previous_cycle_clock_value = get_pin_value(pin, cycle-1);
+					if((cycle%(clock_ratio)) == 0)
+					{
+						if(previous_cycle_clock_value == 0)
+							value = 1;
+						else
+							value = 0;
+					}
+					else
+						value = previous_cycle_clock_value;
+				}
 			}
 			/********************************************************
 			 * use input override to set the pin value to hold high if requested
 			 */
 			
-			else if(contains_a_substr_of_name(global_args.sim_hold_high.value(),name))
+			else if(contains_a_substr_of_name(global_args.sim_hold_high.value(),line->name))
 			{
 				if (!cycle) 	value =	0;	// start with reverse value
 				else        	value =	1;	// then hold to requested value				
@@ -2896,7 +2906,7 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 			/********************************************************
 			 * use input override to set the pin value to hold low if requested
 			 */
-			else if(contains_a_substr_of_name(global_args.sim_hold_low.value(),name))
+			else if(contains_a_substr_of_name(global_args.sim_hold_low.value(),line->name))
 			{
 				if (!cycle) 	value = 1;	// start with reverse value
 				else       		value = 0;		// then hold to requested value
@@ -2907,13 +2917,6 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 			else if( global_args.sim_generate_three_valued_logic)
 			{
 				value = (rand() % 3) - 1;
-			}
-			/********************************************************
-			 * default fallback value is a random 1 or 0
-			 */
-			else
-			{
-				value = (rand() % 2);
 			}
 			
 			v->values[v->count] = (signed char *)vtr::realloc(v->values[v->count], sizeof(signed char) * (v->counts[v->count] + 1));
