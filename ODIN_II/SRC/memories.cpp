@@ -1514,6 +1514,7 @@ void instantiate_soft_single_port_ram(nnode_t *node, short mark, netlist_t *netl
 
 			// Hook the address pin up to the output mux.
 			add_input_pin_to_node(output_mux, copy_input_npin(address_pin), j);
+			ff->edge_type = RISING_EDGE_SENSITIVITY;
 		}
 
 		npin_t *output_pin = node->output_pins[i];
@@ -1636,6 +1637,8 @@ void instantiate_soft_dual_port_ram(nnode_t *node, short mark, netlist_t *netlis
 			// Connect the flipflop to both output muxes.
 			connect_nodes(ff, 0, output_mux1, num_addr + j);
 			connect_nodes(ff, 0, output_mux2, num_addr + j);
+
+			ff->edge_type = RISING_EDGE_SENSITIVITY;
 
 			// Connect address lines to the output muxes for this address.
 			add_input_pin_to_node(output_mux1, copy_input_npin(addr1_pin), j);

@@ -909,7 +909,11 @@ signal_list_t *netlist_expand_ast_of_module(ast_node_t* node, char *instance_nam
 				/* attach the drivers to the driver nets */
 				switch(type_of_circuit)
 				{
-					case FALLING_EDGE_SENSITIVITY: //fallthrough
+					case FALLING_EDGE_SENSITIVITY:
+					{
+						terminate_registered_assignment(node, children_signal_list[1], local_clock_list, instance_name_prefix);
+						break;
+					}
 					case RISING_EDGE_SENSITIVITY:
 					{
 						terminate_registered_assignment(node, children_signal_list[1], local_clock_list, instance_name_prefix);
@@ -2987,6 +2991,8 @@ signal_list_t *assignment_alias(ast_node_t* assignment, char *instance_name_pref
 	signal_list_t *right_outputs = NULL;
 	signal_list_t *right_inputs = NULL;
 
+	char_list_t *out_list;
+
 
 	/* process the signal for the input gate */
 	if (right_memory)
@@ -3062,89 +3068,76 @@ signal_list_t *assignment_alias(ast_node_t* assignment, char *instance_name_pref
 		oassert(in_1 != NULL);
 	}
 
-	char_list_t *out_list;
-
 	if (left_memory)
 	{
 		if (!is_valid_implicit_memory_reference_ast(instance_name_prefix, left))
 			error_message(NETLIST_ERROR, assignment->line_number, assignment->file_number,
 							"Invalid addressing mode for implicit memory %s.\n", left_memory->name);
 
-		// A memory can only be written from a rising clocked sequential block.
-		if (type_of_circuit != RISING_EDGE_SENSITIVITY)
+		if(left->children[2] != NULL)
 		{
-			out_list = NULL;
-			error_message(NETLIST_ERROR, assignment->line_number, assignment->file_number,
-				"Assignment to implicit memories is only supported within rising edge sequential circuits.\n");
+			convert_multi_to_single_dimentional_array(left);
 		}
+
+		// Make sure the memory is addressed.
+		signal_list_t* address = netlist_expand_ast_of_module(left->children[1], instance_name_prefix);
+
+		// Pad/shrink the address to the depth of the memory.
+		{
+			while(address->count < left_memory->addr_width)
+				add_pin_to_signal_list(address, get_zero_pin(verilog_netlist));
+			address->count = left_memory->addr_width;
+		}
+
+		add_input_port_to_implicit_memory(left_memory, address, "addr2");
+
+		signal_list_t *data;
+		if (right_memory)
+			data = right_outputs;
 		else
+			data = in_1;
+
+		// Pad/shrink the data to the width of the memory.
 		{
-			if(left->children[2] != NULL)
-			{
-				convert_multi_to_single_dimentional_array(left);
-			}
-
-			// Make sure the memory is addressed.
-			signal_list_t* address = netlist_expand_ast_of_module(left->children[1], instance_name_prefix);
-
-			// Pad/shrink the address to the depth of the memory.
-			{
-				while(address->count < left_memory->addr_width)
-					add_pin_to_signal_list(address, get_zero_pin(verilog_netlist));
-				address->count = left_memory->addr_width;
-			}
-
-			add_input_port_to_implicit_memory(left_memory, address, "addr2");
-
-			signal_list_t *data;
-			if (right_memory)
-				data = right_outputs;
-			else
-				data = in_1;
-
-			// Pad/shrink the data to the width of the memory.
-			{
-				while(data->count < left_memory->data_width)
-					add_pin_to_signal_list(data, get_zero_pin(verilog_netlist));
-				data->count = left_memory->data_width;
-			}
-
-			add_input_port_to_implicit_memory(left_memory, data, "data2");
-
-			signal_list_t *we = init_signal_list();
-			add_pin_to_signal_list(we, get_one_pin(verilog_netlist));
-			add_input_port_to_implicit_memory(left_memory, we, "we2");
-
-			in_1 = init_signal_list();
-			char *name = left->children[0]->types.identifier;
-			int i;
-			int pin_index = left_memory->data_width + left_memory->data_width + left_memory->addr_width + 2;
-			for (i = 0; i < address->count; i++)
-			{
-				npin_t *pin = address->pins[i];
-				pin->name = make_full_ref_name(instance_name_prefix, NULL, NULL, name, pin_index++);
-				add_pin_to_signal_list(in_1, pin);
-			}
-			free_signal_list(address);
-
-			for (i = 0; i < data->count; i++)
-			{
-				npin_t *pin = data->pins[i];
-				pin->name = make_full_ref_name(instance_name_prefix, NULL, NULL, name, pin_index++);
-				add_pin_to_signal_list(in_1, pin);
-			}
-			free_signal_list(data);
-
-			for (i = 0; i < we->count; i++)
-			{
-				npin_t *pin = we->pins[i];
-				pin->name = make_full_ref_name(instance_name_prefix, NULL, NULL, name, pin_index++);
-				add_pin_to_signal_list(in_1, pin);
-			}
-			free_signal_list(we);
-
-			out_list = NULL;
+			while(data->count < left_memory->data_width)
+				add_pin_to_signal_list(data, get_zero_pin(verilog_netlist));
+			data->count = left_memory->data_width;
 		}
+
+		add_input_port_to_implicit_memory(left_memory, data, "data2");
+
+		signal_list_t *we = init_signal_list();
+		add_pin_to_signal_list(we, get_one_pin(verilog_netlist));
+		add_input_port_to_implicit_memory(left_memory, we, "we2");
+
+		in_1 = init_signal_list();
+		char *name = left->children[0]->types.identifier;
+		int i;
+		int pin_index = left_memory->data_width + left_memory->data_width + left_memory->addr_width + 2;
+		for (i = 0; i < address->count; i++)
+		{
+			npin_t *pin = address->pins[i];
+			pin->name = make_full_ref_name(instance_name_prefix, NULL, NULL, name, pin_index++);
+			add_pin_to_signal_list(in_1, pin);
+		}
+		free_signal_list(address);
+
+		for (i = 0; i < data->count; i++)
+		{
+			npin_t *pin = data->pins[i];
+			pin->name = make_full_ref_name(instance_name_prefix, NULL, NULL, name, pin_index++);
+			add_pin_to_signal_list(in_1, pin);
+		}
+		free_signal_list(data);
+
+		for (i = 0; i < we->count; i++)
+		{
+			npin_t *pin = we->pins[i];
+			pin->name = make_full_ref_name(instance_name_prefix, NULL, NULL, name, pin_index++);
+			add_pin_to_signal_list(in_1, pin);
+		}
+		free_signal_list(we);
+
 	}
 	else
 	{
@@ -3968,22 +3961,36 @@ signal_list_t *evaluate_sensitivity_list(ast_node_t *delay_control, char *instan
 			edge_type_e child_sensitivity = UNDEFINED_SENSITIVITY;
 			switch(delay_control->children[i]->type)
 			{
-				case NEGEDGE:	child_sensitivity = FALLING_EDGE_SENSITIVITY;	break;
-				case POSEDGE:	child_sensitivity = RISING_EDGE_SENSITIVITY;	break;
-				default:		child_sensitivity = ASYNCHRONOUS_SENSITIVITY;	break;
+				case NEGEDGE:	
+					child_sensitivity = FALLING_EDGE_SENSITIVITY;	
+					break;
+				case POSEDGE:	
+					child_sensitivity = RISING_EDGE_SENSITIVITY;	
+					break;
+				default:		
+					child_sensitivity = ASYNCHRONOUS_SENSITIVITY;	
+					break;
 			}
 
 			if(edge_type == UNDEFINED_SENSITIVITY)
 				edge_type = child_sensitivity;
 
-			if(	(edge_type == ASYNCHRONOUS_SENSITIVITY && child_sensitivity != ASYNCHRONOUS_SENSITIVITY)
-			||	(edge_type != ASYNCHRONOUS_SENSITIVITY && child_sensitivity == ASYNCHRONOUS_SENSITIVITY))
+			if(	(edge_type != child_sensitivity)
+			&& ((edge_type == ASYNCHRONOUS_SENSITIVITY) || (child_sensitivity == ASYNCHRONOUS_SENSITIVITY)) )
 				error_message(NETLIST_ERROR, delay_control->line_number, delay_control->file_number,
 					"Sensitivity list switches between edge sensitive to asynchronous.  You can't define something like always @(posedge clock or a).\n");
 			
 			switch(edge_type)
 			{
-				case FALLING_EDGE_SENSITIVITY: //fallthrough
+				case FALLING_EDGE_SENSITIVITY:
+				{
+					signal_list_t *temp_list = create_pins(delay_control->children[i]->children[0], NULL, instance_name_prefix);
+					oassert(temp_list->count == 1);
+
+					add_pin_to_signal_list(return_sig_list, temp_list->pins[0]);
+					free_signal_list(temp_list);
+					break;
+				}
 				case RISING_EDGE_SENSITIVITY:
 				{
 					signal_list_t *temp_list = create_pins(delay_control->children[i]->children[0], NULL, instance_name_prefix);
@@ -4396,7 +4403,26 @@ signal_list_t *create_mux_statements(signal_list_t **statement_lists, nnode_t *m
 
 				switch(type_of_circuit)
 				{
-					case RISING_EDGE_SENSITIVITY:	//fallthrough
+					case RISING_EDGE_SENSITIVITY:
+					{
+						/* implied signal for mux */
+						if (lookup_implicit_memory_input(pin->name))
+						{
+							// If the mux feeds an implicit memory, imply zero.
+							add_input_pin_to_node(mux_node, get_zero_pin(verilog_netlist), pin_index);
+						}
+						else
+						{
+							/* lookup this driver name */
+							signal_list_t *this_pin_list = create_pins(NULL, pin->name, instance_name_prefix);
+							oassert(this_pin_list->count == 1);
+							//add_a_input_pin_to_node_spot_idx(mux_node, get_zero_pin(verilog_netlist), pin_index);
+							add_input_pin_to_node(mux_node, this_pin_list->pins[0], pin_index);
+							/* clean up */
+							free_signal_list(this_pin_list);
+						}
+						break;
+					}
 					case FALLING_EDGE_SENSITIVITY:
 					{
 						/* implied signal for mux */

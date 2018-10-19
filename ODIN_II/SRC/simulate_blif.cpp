@@ -21,6 +21,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 */
 #include "simulate_blif.h"
+#include "node_creation_library.h"
 #include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
@@ -39,13 +40,37 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 int num_of_clock;
 
+typedef enum
+{
+	FALLING,
+	RISING,
+	HIGH,
+	LOW,
+	UNK
+}edge_eval_e;
+
+inline static edge_eval_e get_edge_type(npin_t *clk, int cycle)
+{
+	if(!clk)
+		return UNK;
+
+	signed char prev = !CLOCK_INITIAL_VALUE;
+	signed char cur = CLOCK_INITIAL_VALUE;
+
+	if(cycle > 0)
+	{
+		prev = get_pin_value(clk, cycle-1);
+		cur = get_pin_value(clk, cycle);
+	}
+
+	return 	((prev != cur) && (prev == 0 || cur == 1))?	RISING:
+			((prev != cur) && (prev == 1 || cur == 0))?	FALLING:
+			(cur == 1)?									HIGH:
+			(cur == 0)?									LOW:
+														UNK;
+}
+
 #define is_clock_node(node)	( (node->type == CLOCK_NODE) || (std::string(node->name) == "top^clk") ) // Strictly for memories.
-#define get_edge_type(pin, cycle) (get_pin_value(pin, cycle) - get_pin_value(pin, cycle-1))
-#define is_posedge(pin, cycle) 	(get_edge_type(pin,cycle) > 0)
-#define is_negedge(pin, cycle) 	(get_edge_type(pin,cycle) < 0)
-#define is_edge(pin, cycle)		(get_edge_type(pin,cycle) != 0)
-#define is_high(pin, cycle)		(get_pin_value(clock_pin, cycle) == 1)
-#define is_low(pin, cycle)		(get_pin_value(clock_pin, cycle) == 0)
 
 static void simulate_cycle(int cycle, stages_t *s);
 static stages_t *simulate_first_cycle(netlist_t *netlist, int cycle, lines_t *output_lines);
@@ -1539,6 +1564,19 @@ static int get_pin_cycle(npin_t *pin)
 	return to_return;
 }
 
+inline static bool ff_trigger(edge_type_e type, npin_t* clk, int cycle)
+{
+	edge_eval_e clk_e = get_edge_type(clk, cycle);
+	// update the flip-flop from the input value of the previous cycle.
+	return (
+			(type == FALLING_EDGE_SENSITIVITY	&&	clk_e == FALLING)
+		||	(type == RISING_EDGE_SENSITIVITY	&&	clk_e == RISING)
+		||	(type == ACTIVE_HIGH_SENSITIVITY	&&	clk_e == HIGH)
+		||	(type == ACTIVE_LOW_SENSITIVITY		&&	clk_e == LOW)
+		||	(type == ASYNCHRONOUS_SENSITIVITY	&&	(clk_e == RISING || clk_e == FALLING))
+	);
+}
+
 /*
  * Computes a node of type FF_NODE for the given cycle.
  */
@@ -1547,16 +1585,11 @@ static void compute_flipflop_node(nnode_t *node, int cycle)
 	oassert(node->num_output_pins == 1);
 	oassert(node->num_input_pins  == 2);
 
-	npin_t *clock_pin  = node->input_pins[1];
-
-	// update the flip-flop from the input value of the previous cycle.
-	bool trigger =	(node->edge_type == FALLING_EDGE_SENSITIVITY)?	is_negedge(clock_pin, cycle):
-					(node->edge_type == RISING_EDGE_SENSITIVITY)?	is_posedge(clock_pin, cycle):
-					(node->edge_type == ACTIVE_HIGH_SENSITIVITY)?	is_high(clock_pin, cycle):
-					(node->edge_type == ACTIVE_LOW_SENSITIVITY)?	is_low(clock_pin, cycle):
-					/*ASYNCHRONOUS_SENSITIVITY (default)*/			is_edge(clock_pin,cycle);
+	bool trigger = ff_trigger(node->edge_type, node->input_pins[1], cycle);
 	
-	signed char update_pin_to = (trigger)?	 get_pin_value(node->input_pins[0],cycle):	get_pin_value(node->output_pins[0],cycle-1);
+	signed char update_pin_to = (trigger)?	 
+		get_pin_value(node->input_pins[0],cycle):	
+		get_pin_value(node->output_pins[0],cycle-1);
 
 	update_pin_value(node->output_pins[0], update_pin_to, cycle);
 }
@@ -2063,16 +2096,16 @@ static void compute_single_port_memory(nnode_t *node, int cycle)
 {
 	sp_ram_signals *signals = get_sp_ram_signals(node);
 
-	int posedge = is_posedge(signals->clk, cycle);
-
 	if (!node->memory_data)
 		instantiate_memory(node, signals->data->count, signals->addr->count);
 
+	bool trigger = ff_trigger(RISING_EDGE_SENSITIVITY, signals->clk, cycle-1);
+
 	// On the rising edge, write the memory.
-	if (posedge)
+	if (trigger)
 	{
-		int we = get_pin_value(signals->we, cycle);
-		long address = compute_memory_address(signals->addr, cycle);
+		int we = get_pin_value(signals->we, cycle -1);
+		long address = compute_memory_address(signals->addr, cycle -1);
 		char address_ok = (address != -1)?1:0;
 
 		int i;
@@ -2083,7 +2116,7 @@ static void compute_single_port_memory(nnode_t *node, int cycle)
 
 			// If write is enabled, copy the input to memory.
 			if (address_ok && we)
-				node->memory_data[bit_address] = get_pin_value(signals->data->pins[i],cycle);
+				node->memory_data[bit_address] = get_pin_value(signals->data->pins[i],cycle-1);
 		}
 	}
 
@@ -2116,13 +2149,14 @@ static void compute_single_port_memory(nnode_t *node, int cycle)
 static void compute_dual_port_memory(nnode_t *node, int cycle)
 {
 	dp_ram_signals *signals = get_dp_ram_signals(node);
-	int posedge = is_posedge(signals->clk, cycle);
 
 	if (!node->memory_data)
 		instantiate_memory(node, signals->data2->count, signals->addr2->count);
 
+	bool trigger = ff_trigger(RISING_EDGE_SENSITIVITY, signals->clk, cycle-1);
+
 	// On the rising edge, we write the memory.
-	if (posedge)
+	if (trigger)
 	{
 		int we1     = get_pin_value(signals->we1, cycle - 1);
 		int we2     = get_pin_value(signals->we2, cycle - 1);
@@ -2142,10 +2176,10 @@ static void compute_dual_port_memory(nnode_t *node, int cycle)
 
 			// Write to the memory
 			if (address1_ok && we1)
-				node->memory_data[bit_address1] = get_pin_value(signals->data1->pins[i], cycle);
+				node->memory_data[bit_address1] = get_pin_value(signals->data1->pins[i], cycle-1);
 
 			if (address2_ok && we2)
-				node->memory_data[bit_address2] = get_pin_value(signals->data2->pins[i], cycle);
+				node->memory_data[bit_address2] = get_pin_value(signals->data2->pins[i], cycle-1);
 		}
 	}
 
@@ -2900,7 +2934,7 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 			
 			else if(contains_a_substr_of_name(global_args.sim_hold_high.value(),line->name))
 			{
-				if (!cycle) 	value =	0;	// start with reverse value
+				if (cycle < pow(2,num_of_clock-1)*3) 	value =	0;	// start with reverse value
 				else        	value =	1;	// then hold to requested value				
 			}
 			/********************************************************
@@ -2908,7 +2942,7 @@ static test_vector *generate_random_test_vector(int cycle, sim_data_t *sim_data)
 			 */
 			else if(contains_a_substr_of_name(global_args.sim_hold_low.value(),line->name))
 			{
-				if (!cycle) 	value = 1;	// start with reverse value
+				if (cycle < pow(2,num_of_clock-1)*3) 	value = 1;	// start with reverse value
 				else       		value = 0;		// then hold to requested value
 			}
 			/********************************************************
