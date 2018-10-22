@@ -3,7 +3,6 @@
 `define B2TS 16         // Bit width of the operands
 
 module 	bm_base_multiply(clock, 
-		reset_n, 
 		a_in, 
 		b_in,
 		c_in, 
@@ -18,7 +17,6 @@ module 	bm_base_multiply(clock,
 
 // SIGNAL DECLARATIONS
 input	clock;
-input 	reset_n;
 
 input [`BITS-1:0] a_in;
 input [`BITS-1:0] b_in;

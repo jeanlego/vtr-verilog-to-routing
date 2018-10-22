@@ -2,7 +2,6 @@
 `define BITS 32         // Bit width of the operands
 
 module 	bm_lpm_all(clock, 
-		reset_n, 
 		a, 
 		b, 
 		out1,
@@ -17,7 +16,6 @@ module 	bm_lpm_all(clock,
 
 // SIGNAL DECLARATIONS
 input	clock;
-input 	reset_n;
 
 input [`BITS-1:0] a;
 input [`BITS-1:0] b;

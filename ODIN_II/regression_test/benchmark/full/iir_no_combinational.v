@@ -1,17 +1,17 @@
 module iir (clk, reset, start, din, params, dout, ready,iir_start,iir_done);
+
 input clk, reset, start;
 input [7:0] din;
 input [15:0] params;
+input iir_start;
+
+output iir_done;
 output [7:0] dout;
-reg [7:0] dout;
 output ready;
-reg ready;
+
 reg temp_ready;
 reg [6:0] finite_counter;
 wire count0;
-input iir_start;
-output iir_done;
-wire iir_done;
 reg del_count0;
 
 reg [15:0] a1, a2, b0, b1, b2, yk1, yk2;
@@ -24,7 +24,6 @@ reg [3:0] wait_counter ;
 wire [31:0] yo1, yo2;
 //wire [23:0] b0t, b1t, b2t;
 wire [22:0] b0t, b1t, b2t;
-wire [22:0] b0tpaj, b1tpaj, b2tpaj;
 
 reg [3:0] obf_state, obf_next_state ;
 
@@ -35,6 +34,16 @@ reg [26:0] temp_yk ;
 reg [22:0] temp_utmp;
 reg [7:0] temp_dout;
 reg [3:0] temp_wait_counter ;
+
+assign yo1 = yk1 * a1;
+assign yo2 = yk2*a2;
+
+assign b0t = uk*b0;
+assign b1t = uk1*b1;
+assign b2t = uk2*b2;
+
+assign count0 = (finite_counter == 7'b0);
+assign iir_done = (count0 && ~del_count0); 
 
 parameter 
 idle = 4'b0001 ,
@@ -147,46 +156,8 @@ begin
 				else 
 					obf_next_state <= wait4_start ;
 	endcase
-end 
 
-
-
-//assign yo1 = mul_tc_16_16(yk1, a1, clk);
-assign yo1 = yk1 * a1;
-//assign yo2 = mul_tc_16_16(yk2, a2, clk);
-assign yo2 = yk2*a2;
-//assign b0t = mul_tc_8_16(uk, b0, clk);
-//assign b1t = mul_tc_8_16(uk1, b1, clk);
-//assign b2t = mul_tc_8_16(uk2, b2, clk);
-assign b0t = uk*b0;
-assign b1t = uk1*b1;
-assign b2t = uk2*b2;
-// paj added to solve unused high order bit
-assign b0tpaj = b0t;
-assign b1tpaj = b1t;
-assign b2tpaj = b2t;
-
-// A COEFFICENTS
-always @(posedge clk or posedge reset) begin
-	if (reset ) begin
-		uk <= 0 ;
-		uk1 <= 0 ;
-		uk2 <= 0 ;
-		yk1 <= 0 ;
-		yk2 <= 0 ;
-		yk <= 0 ;
-		ysum <= 0 ;
-		utmp <= 0 ;
-		a1 <= 0 ;
-		a2 <= 0 ;
-		b0 <= 0 ;
-		b1 <= 0 ;
-		b2 <= 0 ;
-		dout <= 0 ;
-		obf_state <= idle ;
-		ready <= 0;
-	end
-	else begin
+	if ( ~reset ) begin
 		obf_state <= obf_next_state ;
 		uk1 <= temp_uk1;
 		uk2 <= temp_uk2;
@@ -203,36 +174,42 @@ always @(posedge clk or posedge reset) begin
 		yk1 <= temp_yk1;
 		yk2 <= temp_yk2;
 		ready <= temp_ready;
-	end
-end
 
-// wait counter, count 4 clock after sum is calculated, to 
-// time outputs are ready, and filter is ready to accept next
-// input
-always @(posedge clk or posedge reset ) begin
-	if (reset )
-		wait_counter <= 0 ;
-	else begin
+		// wait counter, count 4 clock after sum is calculated, to 
+		// time outputs are ready, and filter is ready to accept next
+		// input
+
 		wait_counter <= temp_wait_counter ;
-	end
-end
 
-always @(posedge clk) begin
-	if (reset)
-		finite_counter<=100;
-	else 
 		if (iir_start) 
 			finite_counter<=finite_counter -1;
 		else 
 			finite_counter<=finite_counter;
-end
 
-assign count0=finite_counter==7'b0;
+	end	 
+	else begin
+		uk <= 0 ;
+		uk1 <= 0 ;
+		uk2 <= 0 ;
+		yk1 <= 0 ;
+		yk2 <= 0 ;
+		yk <= 0 ;
+		ysum <= 0 ;
+		utmp <= 0 ;
+		a1 <= 0 ;
+		a2 <= 0 ;
+		b0 <= 0 ;
+		b1 <= 0 ;
+		b2 <= 0 ;
+		dout <= 0 ;
+		obf_state <= idle ;
+		ready <= 0;
+		wait_counter <= 0 ;
+		finite_counter<=100;
+	end
 
-always @(posedge clk) begin
 	del_count0 <= count0;
-end
 
-assign iir_done = (count0 && ~del_count0); 
+end 
 
 endmodule

@@ -26,12 +26,14 @@ OTHER DEALINGS IN THE SOFTWARE.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <unordered_map>
+
+
 
 #define SIM_WAVE_LENGTH 16
 #define BUFFER_MAX_SIZE 1024
 
 #include <queue>
-#include "hashtable.h"
 #include "sim_block.h"
 #include "types.h"
 #include "globals.h"
@@ -60,11 +62,6 @@ OTHER DEALINGS IN THE SOFTWARE.
 #define DUAL_PORT_MEMORY_NAME "dual_port_ram"
 
 typedef struct {
-	char **pins;
-	int   count;
-} pin_names;
-
-typedef struct {
 	int number_of_pins;
 	int max_number_of_pins;
 	npin_t **pins;
@@ -77,6 +74,7 @@ typedef struct {
 	line_t **lines;
 	int    *pin_numbers;
 	int    count;
+	int	   num_of_clock;
 } lines_t;
 
 typedef struct {
@@ -115,17 +113,13 @@ typedef struct sim_data_t_t
 	int num_vectors;
 	char *input_vector_file;
 
-	int output_edge;
 	double total_time; // Includes I/O
 	double simulation_time; // Does not include I/O
 
 	stages_t *stages;
 
 	// Parse -L and -H options containing lists of pins to hold high or low during random vector generation.
-	pin_names *hold_high;
-	pin_names *hold_low;
-	hashtable_t *hold_high_index;
-	hashtable_t *hold_low_index;
+	std::unordered_map<std::string,short> held_at;
 
 	int num_waves;
 

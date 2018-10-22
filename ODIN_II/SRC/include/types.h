@@ -100,8 +100,7 @@ typedef struct adder_def_t_t adder_def_t;
 /* This is the data structure that holds config file details */
 struct config_t_t
 {
-	char **list_of_file_names;
-	int num_list_of_file_names;
+	std::vector<std::string> list_of_file_names;
 
 	std::string output_type; // string name of the type of output file
 
@@ -149,7 +148,7 @@ typedef enum {
 struct global_args_t_t
 {
     argparse::ArgValue<char*> config_file;
-	argparse::ArgValue<char*> verilog_file;
+	argparse::ArgValue<std::vector<std::string>> verilog_files;
 	argparse::ArgValue<char*> blif_file;
 	argparse::ArgValue<char*> output_file;
 	argparse::ArgValue<char*> arch_file; // Name of the FPGA architecture file
@@ -169,7 +168,12 @@ struct global_args_t_t
 	/////////////////////
 	// Generate this number of random vectors.
 	argparse::ArgValue<int> sim_num_test_vectors;
+	// Generate this number of random vectors.
+	argparse::ArgValue<double> sim_min_coverage;
 	// Input vectors to simulate instead of generating vectors.
+	argparse::ArgValue<bool> sim_achieve_best;
+	// Input vectors to simulate instead of generating vectors.
+	
 	argparse::ArgValue<char*> sim_vector_input_file;
 	// Existing output vectors to verify against.
 	argparse::ArgValue<char*> sim_vector_output_file;
@@ -177,17 +181,16 @@ struct global_args_t_t
 	argparse::ArgValue<char*> sim_directory;
 	// Tells the simulator whether or not to generate random vectors which include the unknown logic value.
 	argparse::ArgValue<bool> sim_generate_three_valued_logic;
-	// Output both falling and rising edges in the output_vectors file.
+	// Output both falling and rising edges in the output_vectors file. (DEFAULT)
 	argparse::ArgValue<bool> sim_output_both_edges;
-	// Output only on rising edge.
-	argparse::ArgValue<bool> sim_output_rising_edge;
 	// Additional pins, nets, and nodes to output.
-	argparse::ArgValue<char*> sim_additional_pins;
+	argparse::ArgValue<std::vector<std::string>> sim_additional_pins;
 	// Comma-separated list of primary input pins to hold high for all cycles but the first.
-	argparse::ArgValue<char*> sim_hold_high;
+	argparse::ArgValue<std::vector<std::string>> sim_hold_high;
 	// Comma-separated list of primary input pins to hold low for all cycles but the first.
-	argparse::ArgValue<char*> sim_hold_low;
+	argparse::ArgValue<std::vector<std::string>> sim_hold_low;
 
+	argparse::ArgValue<int> parralelized_simulation;
 	//
 	argparse::ArgValue<int> sim_initial_value;
 	// The seed for creating random simulation vector
@@ -218,6 +221,16 @@ typedef enum
 	SIGNED,
 	UNSIGNED
 } signedness;
+
+typedef enum
+{
+	FALLING_EDGE_SENSITIVITY,
+	RISING_EDGE_SENSITIVITY,
+	ACTIVE_HIGH_SENSITIVITY,
+	ACTIVE_LOW_SENSITIVITY,
+	ASYNCHRONOUS_SENSITIVITY,
+	UNDEFINED_SENSITIVITY
+} edge_type_e;
 
 typedef enum
 {
@@ -490,6 +503,8 @@ struct nnode_t_t
 	int ratio; //clock ratio for clock nodes
 	signed char has_initial_value; // initial value assigned?
 	signed char initial_value; // initial net value
+	edge_type_e edge_type; //
+	bool covered =false;
 
 	//Generic gate output
 	unsigned char generic_output; //describes the output (1 or 0) of generic blocks

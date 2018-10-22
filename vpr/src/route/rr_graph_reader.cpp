@@ -16,6 +16,18 @@
 #include <string.h>
 #include <algorithm>
 #include <ctime>
+#include <sstream>
+#include <utility>
+
+#include "vtr_version.h"
+#include "vtr_assert.h"
+#include "vtr_util.h"
+#include "vtr_memory.h"
+#include "vtr_matrix.h"
+#include "vtr_math.h"
+#include "vtr_log.h"
+#include "vtr_time.h"
+
 #include "pugixml.hpp"
 #include "pugixml_util.hpp"
 #include "read_xml_arch_file.h"
@@ -24,15 +36,6 @@
 #include "rr_graph.h"
 #include "rr_graph2.h"
 #include "rr_graph_indexed_data.h"
-#include "vtr_version.h"
-#include <sstream>
-#include <utility>
-#include "vtr_assert.h"
-#include "vtr_util.h"
-#include "vtr_memory.h"
-#include "vtr_matrix.h"
-#include "vtr_math.h"
-#include "vtr_log.h"
 #include "rr_graph_writer.h"
 #include "check_rr_graph.h"
 #include "echo_files.h"
@@ -75,6 +78,7 @@ void load_rr_file(const t_graph_type graph_type,
         int *wire_to_rr_ipin_switch,
         int *num_rr_switches,
         const char* read_rr_graph_name) {
+    vtr::ScopedStartFinishTimer timer("Loading routing resource graph");
 
     const char *Prop;
     pugi::xml_node next_component;
@@ -83,9 +87,9 @@ void load_rr_file(const t_graph_type graph_type,
     pugiutil::loc_data loc_data;
 
     if (vtr::check_file_name_extension(read_rr_graph_name, ".xml") == false) {
-        vtr::printf_warning(__FILE__, __LINE__,
-                "Architecture file '%s' may be in incorrect format. "
-                "Expecting .xml format for RR graph files.\n",
+        VTR_LOG_WARN(
+                "RR graph file '%s' may be in incorrect format. "
+                "Expecting .xml format\n",
                 read_rr_graph_name);
     }
     try {
@@ -101,11 +105,11 @@ void load_rr_file(const t_graph_type graph_type,
         Prop = get_attribute(rr_graph, "tool_version", loc_data, OPTIONAL).as_string(nullptr);
         if (Prop != nullptr) {
             if (strcmp(Prop, vtr::VERSION) != 0) {
-                vtr::printf("\n");
-                vtr::printf_warning(__FILE__, __LINE__,
+                VTR_LOG("\n");
+                VTR_LOG_WARN(
                         "This architecture version is for VPR %s while your current VPR version is %s compatability issues may arise\n",
                         vtr::VERSION, Prop);
-                vtr::printf("\n");
+                VTR_LOG("\n");
             }
         }
         Prop = get_attribute(rr_graph, "tool_comment", loc_data, OPTIONAL).as_string(nullptr);
@@ -113,11 +117,11 @@ void load_rr_file(const t_graph_type graph_type,
         correct_string += get_arch_file_name();
         if (Prop != nullptr) {
             if (Prop != correct_string) {
-                vtr::printf("\n");
-                vtr::printf_warning(__FILE__, __LINE__,
+                VTR_LOG("\n");
+                VTR_LOG_WARN(
                         "This RR graph file is based on %s while your input architecture file is %s compatability issues may arise\n"
                         , get_arch_file_name(), Prop);
-                vtr::printf("\n");
+                VTR_LOG("\n");
             }
         }
 
@@ -131,8 +135,7 @@ void load_rr_file(const t_graph_type graph_type,
         next_component = get_single_child(rr_graph, "segments", loc_data);
         verify_segments(next_component, loc_data, segment_inf);
 
-        vtr::printf_info("Starting build routing resource graph...\n");
-        clock_t begin = clock();
+        VTR_LOG("Starting build routing resource graph...\n");
 
         next_component = get_first_child(rr_graph, "channels", loc_data);
         process_channels(next_component, loc_data);
@@ -181,18 +184,15 @@ void load_rr_file(const t_graph_type graph_type,
 
         process_seg_id(next_component, loc_data);
 
-	if (getEchoEnabled() && isEchoFileEnabled(E_ECHO_RR_GRAPH)) {
-		dump_rr_graph(getEchoFileName(E_ECHO_RR_GRAPH));
-	}
+        if (getEchoEnabled() && isEchoFileEnabled(E_ECHO_RR_GRAPH)) {
+            dump_rr_graph(getEchoFileName(E_ECHO_RR_GRAPH));
+        }
 
         check_rr_graph(graph_type, grid, *num_rr_switches, device_ctx.block_types);
 
 #ifdef USE_MAP_LOOKAHEAD
         compute_router_lookahead(num_seg_types);
 #endif
-
-        float elapsed_time = (float) (clock() - begin) / CLOCKS_PER_SEC;
-        vtr::printf_info("Build routing resource graph took %g seconds\n", elapsed_time);
 
     } catch (XmlError& e) {
 

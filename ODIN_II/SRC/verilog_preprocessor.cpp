@@ -8,13 +8,14 @@
 #include "vtr_memory.h"
 #include "odin_util.h"
 #include <stdbool.h>
+#include <regex>
 
 /* Globals */
 struct veri_Includes veri_includes;
 struct veri_Defines veri_defines;
 
 /* Function declarations */
-FILE* open_source_file(char* filename);
+FILE* open_source_file(char* filename, std::string parent_path);
 FILE *remove_comments(FILE *source);
 FILE *format_verilog_file(FILE *source);
 FILE *format_verilog_variable(FILE * src, FILE *dest);
@@ -186,7 +187,7 @@ int add_veri_define(char *symbol, char *value, int line, veri_include *defined_i
  * veri_include in the lookup table or an entry for that file already exists.
  * Otherwise it wil return a pointer to the new veri_include entry.
  */
-veri_include* add_veri_include(char *path, int line, veri_include *included_from)
+veri_include* add_veri_include(const char *path, int line, veri_include *included_from)
 {
 	int i;
 	veri_include *inc_iterator = veri_includes.included_files[0];
@@ -216,7 +217,7 @@ veri_include* add_veri_include(char *path, int line, veri_include *included_from
 		}
 	}
 
-	new_inc->path = (char *)vtr::strdup(path);
+	new_inc->path = vtr::strdup(path);
 	new_inc->included_from = included_from;
 	new_inc->line = line;
 
@@ -262,54 +263,33 @@ int veri_is_defined(char * symbol)
 
 /*
  * Return an open file handle
- * if the file is not in the pwd try the paths indicated by char* global_args.verilog_file and/or int current_parse_file
+ * if the file is not in the pwd try the paths indicated by char* list_of_file_names int current_parse_file
  *
  * Return NULL if unable to find and open the file
  */
-FILE* open_source_file(char* filename)
+FILE* open_source_file(char* filename, std::string path)
 {
-	extern global_args_t global_args;
-	extern config_t configuration;
-	extern size_t current_parse_file;
+	auto loc = path.find_last_of('/');
+	if (loc != std::string::npos) /* No other path to try to find the file */
+		path = path.substr(0,loc+1);
+	
+	path += filename;
 
-	FILE* src_file = fopen(filename, "r"); //Look for the file in the PWD
+	// look in the directory where the file with the include directory resides in
+	FILE* src_file = fopen(path.c_str(), "r");
+	if (src_file != NULL)
+		return src_file;
+
+	// else Look for the file in the PWD as a last resort TODO: this should go away... not standard behavior
+	src_file = fopen(filename, "r");
 	if (src_file != NULL)
 	{
+		fprintf(stderr, "Warning: Unable to find %s, opening in current working directory instead\n",
+				path.c_str());
 		return src_file;
 	}
 
-	char* path;
-	if (global_args.verilog_file != NULL) //ODIN_II was called with the -V option.
-	{
-		path = (char *) vtr::strdup(global_args.verilog_file);
-	}
-	else if(global_args.config_file != NULL) //ODIN_II was called with the -c option.
-	{
-		path = (char *) vtr::strdup(configuration.list_of_file_names[current_parse_file]);
-	}
-	else
-	{
-		path = NULL;
-		fprintf(stderr, "Invalid state in open_source_file.");
-	}
 
-	char* last_slash = strrchr(path, '/');
-	if (last_slash == NULL) /* No other path to try to find the file */
-	{
-		vtr::free(path);
-		return NULL;
-	}
-	*(last_slash + 1) = '\0';
-	strcat(path, filename);
-
-	src_file = fopen(path, "r");
-	if (src_file != NULL)
-	{
-		fprintf(stderr, "Warning: Unable to find %s in the present working directory, opening %s instead\n",
-				filename, path);
-		vtr::free(path);
-		return src_file;
-	}
 
 	return NULL;
 }
@@ -325,8 +305,7 @@ FILE* veri_preproc(FILE *source)
 	FILE *preproc_producer = NULL;
 
 	/* Was going to use filename to prevent duplication but the global var isn't used in the case of a config value */
-	char* current_file = (global_args.verilog_file != NULL) ? global_args.verilog_file : configuration.list_of_file_names[current_parse_file];
-	veri_include *veri_initial = add_veri_include(current_file, 0, NULL);
+	veri_include *veri_initial = add_veri_include(configuration.list_of_file_names[current_parse_file].c_str(), 0, NULL);
 	if (veri_initial == NULL)
 	{
 		fprintf(stderr, "Unable to store include information returning original FILE pointer\n\n");
@@ -366,7 +345,7 @@ FILE *remove_comments(FILE *source)
 	while (fgets(line, MaxLine, source))
 	{
 		unsigned int i;
-		for (i = 0; i < strlen(line); i++)
+		for (i = 0; i < strnlen(line, MaxLine); i++)
 		{
 			if (!in_multiline_comment)
 			{
@@ -416,6 +395,7 @@ void veri_preproc_bootstraped(FILE *original_source, FILE *preproc_producer, ver
 	char *token;
 	veri_include *new_include = NULL;
 
+
 	while (NULL != fgets(line, MaxLine, source))
 	{
 		//fprintf(stderr, "%s:%d\t%s", current_include->path,line_number, line);
@@ -432,36 +412,27 @@ void veri_preproc_bootstraped(FILE *original_source, FILE *preproc_producer, ver
 			strncpy( p_proc_line, last_pch, pch - last_pch ) ;
 			p_proc_line += pch - last_pch ;
 			*p_proc_line = '\0' ;
+
 			// find the end of the symbol
-			pch_end = pch+1 ;
-			while ( ( *pch_end >= '0' && *pch_end <= '9' ) ||
-				( *pch_end >= 'A' && *pch_end <= 'Z' ) ||
-				( *pch_end >= 'a' && *pch_end <= 'z' ) ||
-				*pch_end == '_' )
-				pch_end++ ;
+			for(pch_end = pch+1 ; pch_end && ( isalnum(*pch_end) || *pch_end == '_' ); pch_end++){}
+
 			// copy symbol into array
 			strncpy( symbol, pch+1, pch_end - (pch+1) ) ;
 			*(symbol + (pch_end - (pch+1))) = '\0' ;
+
 			char* value = ret_veri_definedval( symbol ) ;
-			if ( value ) {
-				strcpy( p_proc_line, value ) ;
-				p_proc_line += strlen( value ) ;
-			}
-			else {
-				// symbol not found, just pass it through
+			if ( !value ) {		// symbol not found, just pass it through
+				value = symbol;
 				*p_proc_line++ = '`' ;
-				strcpy( p_proc_line, symbol ) ;
-				p_proc_line += strlen( symbol ) ;
 			}
+			vtr::strncpy( p_proc_line, value, MaxLine) ;
+			p_proc_line += strlen( value ) ;
+
 			last_pch = pch_end ;
 			pch = strchr( last_pch+1, '`' ) ;
 		}
-		pch = strchr( last_pch, '\0' ) ;
-		strncpy( p_proc_line, last_pch, pch - last_pch ) ;
-		p_proc_line += pch - last_pch ;
-		*p_proc_line = '\0' ;
-
-		strcpy( line, proc_line ) ;
+		vtr::strncpy( p_proc_line, last_pch, MaxLine) ;
+		vtr::strncpy( line, proc_line, MaxLine) ;
 
 		//fprintf(stderr, "%s:%d\t%s\n", current_include->path,line_number, line);
 
@@ -475,13 +446,8 @@ void veri_preproc_bootstraped(FILE *original_source, FILE *preproc_producer, ver
 			 */
 			if (top(skip) < 1 && strcmp(token, "`include") == 0)
 			{
-				printf("%s\n", token);
-
 				token = trim((char *)strtok(NULL, "\""));
-
-				printf("%s\n", token);
-
-				FILE *included_file = open_source_file(token);
+				FILE *included_file = open_source_file(token,current_include->path);
 
 				/* If we failed to open the included file handle the error */
 				if (!included_file)
@@ -493,6 +459,7 @@ void veri_preproc_bootstraped(FILE *original_source, FILE *preproc_producer, ver
 				}
 				else if (NULL != (new_include = add_veri_include(token, line_number, current_include)))
 				{
+					printf("Including file %s\n", new_include->path);
 					veri_preproc_bootstraped(included_file, preproc_producer, new_include);
 				}
 				fclose(included_file);
@@ -507,8 +474,8 @@ void veri_preproc_bootstraped(FILE *original_source, FILE *preproc_producer, ver
 				char *value = NULL;
 
 				/* strtok is destructive to the original string which we need to retain unchanged, this fixes it. */
-				fprintf(preproc_producer, "`define %s\n", line + 1 + strlen(line));
-				//printf("\tIn define: %s", token + 1 + strlen(token));
+				fprintf(preproc_producer, "`define %s\n", line + 1 + strnlen(line, MaxLine));
+				//printf("\tIn define: %s", token + 1 + strnlen(token, MaxLine));
 
 				token = trim(strtok(NULL, " \t"));
 				//printf("token is: %s\n", token);
@@ -530,7 +497,7 @@ void veri_preproc_bootstraped(FILE *original_source, FILE *preproc_producer, ver
 			{
 				int is_defined = 0;
 				/* strtok is destructive to the original string which we need to retain unchanged, this fixes it. */
-				fprintf(preproc_producer, "`undef %s", line + 1 + strlen(line));
+				fprintf(preproc_producer, "`undef %s", line + 1 + strnlen(line, MaxLine));
 
 				token = trim(strtok(NULL, " \t"));
 
@@ -614,12 +581,16 @@ void veri_preproc_bootstraped(FILE *original_source, FILE *preproc_producer, ver
 			/* Leave unhandled preprocessor directives in place. */
 			else if (top(skip) < 1)
 			{
-				fprintf(preproc_producer, "%s %s\n", line, line + 1 + strlen(line));
+				fprintf(preproc_producer, "%s %s\n", line, line + 1 + strnlen(line, MaxLine));
 			}
 		}
 		else if(top(skip) < 1)
 		{
-			if (fprintf(preproc_producer, "%s\n", line) < 0)//fputs(line, preproc_producer))
+			if(strnlen(line, MaxLine) <= 0)
+			{
+				/* There is nothing to print */
+			}
+			else if( fprintf(preproc_producer, "%s\n", line) < 0)//fputs(line, preproc_producer)
 			{
 				/* There was an error writing to the stream */
 			}
@@ -633,24 +604,34 @@ void veri_preproc_bootstraped(FILE *original_source, FILE *preproc_producer, ver
 
 /* General Utility methods ------------------------------------------------- */
 
+/**
+ * the trim function remove consequent whitespace and remove trailing whitespace
+ */
+inline static bool are_both_whitespace(char a, char b) 
+{ 
+	return isspace(a) && isspace(b);
+}
+
 char* trim(char *string)
 {
-	int i = 0;
-	if (string != NULL)
-	{
-		// advance past all spaces at the beginning
-		while( isspace( *string ) ) string++ ;
-		// trim all spaces at the end
-		for(i = strlen(string)-1; i >= 0 ; i--)
-		{
-			if(isspace(string[i]) > 0)
-			{
-				string[i] = '\0';
-			}
-			else
-				break ;
-		}
-	}
+	if (!string)
+		return string;
+
+	std::string temp = string;
+	//replace large space{1 or more} with single space inside text
+	std::string::iterator new_end = std::unique(temp.begin(), temp.end(), are_both_whitespace);
+	temp.erase(new_end, temp.end());   
+
+	//remove head whitespace
+	if( temp.length() > 0 && isspace(temp[0]) )					temp.erase(0,1);
+	//remove trailing whitespace
+	if( temp.length() > 0 && isspace(temp[temp.length()-1]) )	temp.erase(temp.length()-1,1);
+	//copy string over
+	if( temp.length() > 0)										memcpy(string,temp.c_str(), temp.length());
+	
+	//make sure we have a nul terminated string
+	string[temp.length()] = '\0';
+
 	return string;
 }
 
@@ -739,7 +720,7 @@ FILE *format_verilog_file(FILE *source)
 		line = search_replace(line,searchString[i],"",2);
 	}
 	i = 0;
-	while (i < strlen(line))
+	while (i < strnlen(line, MaxLine))
 	{
 		if(line[i] == '[')
 		{

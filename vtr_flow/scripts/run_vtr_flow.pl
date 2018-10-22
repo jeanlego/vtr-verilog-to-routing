@@ -67,9 +67,7 @@ sub expand_user_path;
 sub file_find_and_replace;
 sub xml_find_LUT_Kvalue;
 sub xml_find_mem_size;
-sub find_and_move_newest;
 sub exe_for_platform;
-sub find_and_move_files_for_vpr_stages;
 
 my $temp_dir = "./temp";
 my $diff_exec = "diff";
@@ -85,7 +83,6 @@ my $architecture_file_path = expand_user_path( shift(@ARGV) );
 my $sdc_file_path;
 my $pad_file_path;
 
-my $token;
 my $ext;
 my $starting_stage          = stage_index("odin");
 my $ending_stage            = stage_index("vpr");
@@ -122,94 +119,68 @@ my $verbosity = 0;
 my $odin_adder_config_path = "default";
 my $use_odin_xml_config = 1;
 
-while ( $token = shift(@ARGV) ) {
+while ( scalar(@ARGV) != 0 ) { #While non-empty
+    my $token = shift(@ARGV);
 	if ( $token eq "-sdc_file" ) {
 		$sdc_file_path = expand_user_path( shift(@ARGV) );
-	}
-	elsif ( $token eq "-fix_pins" and $ARGV[0] ne "random") {
+	} elsif ( $token eq "-fix_pins" and $ARGV[0] ne "random") {
 		$pad_file_path = $vtr_flow_path . shift(@ARGV);
-	}
-	elsif ( $token eq "-starting_stage" ) {
+	} elsif ( $token eq "-starting_stage" ) {
 		$starting_stage = stage_index( shift(@ARGV) );
-	}
-	elsif ( $token eq "-ending_stage" ) {
+	} elsif ( $token eq "-ending_stage" ) {
 		$ending_stage = stage_index( shift(@ARGV) );
-	}
-	elsif ( $token eq "-delete_intermediate_files" ) {
+	} elsif ( $token eq "-delete_intermediate_files" ) {
 		$keep_intermediate_files = 0;
-	}
-    elsif ( $token eq "-delete_result_files" ) {
+	} elsif ( $token eq "-delete_result_files" ) {
         $keep_result_files = 0;
-    }
-    elsif ( $token eq "-track_memory_usage" ) {
+    } elsif ( $token eq "-track_memory_usage" ) {
         $track_memory_usage = 1;
-    }
-    elsif ( $token eq "-limit_memory_usage" ) {
+    } elsif ( $token eq "-limit_memory_usage" ) {
         $limit_memory_usage = shift(@ARGV);
         $abc_quote_addition = 1;
-    }
-    elsif ( $token eq "-timeout" ) {
+    } elsif ( $token eq "-timeout" ) {
         $timeout = shift(@ARGV);
-    }
-    elsif ( $token eq "-valgrind" ) {
+    } elsif ( $token eq "-valgrind" ) {
         $valgrind = 1;
-    }
-	elsif ( $token eq "-lut_size" ) {
+    } elsif ( $token eq "-lut_size" ) {
 		$lut_size = shift(@ARGV);
-	}
-	elsif ( $token eq "-temp_dir" ) {
+	} elsif ( $token eq "-temp_dir" ) {
 		$temp_dir = shift(@ARGV);
-	}
-	elsif ( $token eq "-cmos_tech" ) {
+	} elsif ( $token eq "-cmos_tech" ) {
 		$tech_file = shift(@ARGV);
-	}
-	elsif ( $token eq "-power" ) {
+	} elsif ( $token eq "-power" ) {
 		$do_power = 1;
-	}
-	elsif ( $token eq "-check_equivalent" ) {
+	} elsif ( $token eq "-check_equivalent" ) {
 		$check_equivalent = "on";
 		$keep_intermediate_files = 1;
-	}
-	elsif ( $token eq "-min_hard_mult_size" ) {
+	} elsif ( $token eq "-min_hard_mult_size" ) {
 		$min_hard_mult_size = shift(@ARGV);
-	}
-	elsif ( $token eq "-min_hard_adder_size" ) {
+	} elsif ( $token eq "-min_hard_adder_size" ) {
 		$min_hard_adder_size = shift(@ARGV);
-	}
-    elsif ( $token eq "-verify_rr_graph" ){
+	} elsif ( $token eq "-verify_rr_graph" ){
             $verify_rr_graph = 1;
-    }
-    elsif ( $token eq "-check_route" ){
+    } elsif ( $token eq "-check_route" ){
             $check_route = 1;
-    }
-    elsif ( $token eq "-check_place" ){
+    } elsif ( $token eq "-check_place" ){
             $check_place = 1;
-    }
-    elsif ( $token eq "-use_old_abc"){
+    } elsif ( $token eq "-use_old_abc"){
             $use_old_abc = 1;
-    }
-    elsif ( $token eq "-use_old_abc_script"){
+    } elsif ( $token eq "-use_old_abc_script"){
             $use_old_abc_script = 1;
-    }
-    elsif ( $token eq "-abc_use_dc2"){
+    } elsif ( $token eq "-abc_use_dc2"){
             $abc_use_dc2 = shift(@ARGV);
-    }
-    elsif ( $token eq "-name"){
+    } elsif ( $token eq "-name"){
             $run_name = shift(@ARGV);
-    }
-    elsif ( $token eq "-expect_fail"){
+    } elsif ( $token eq "-expect_fail"){
             $expect_fail = 1;
-    }
-    elsif ( $token eq "-verbose"){
-            $expect_fail = shift(@ARGV);
-    }
-    elsif ( $token eq "-adder_type"){
+    } elsif ( $token eq "-verbose"){
+            $verbosity = shift(@ARGV);
+    } elsif ( $token eq "-adder_type"){
         $odin_adder_config_path = shift(@ARGV);
         if ( ($odin_adder_config_path ne "default") && ($odin_adder_config_path ne "optimized") ) {
                 $odin_adder_config_path = $vtr_flow_path . $odin_adder_config_path;
         }
-    }
-    elsif ( $token eq "-disable_odin_xml" ){
+    } elsif ( $token eq "-disable_odin_xml" ){
                     $use_odin_xml_config = 0;
     } else { # forward the argument
         push @forwarded_vpr_args, $token;
@@ -726,6 +697,7 @@ if ( $ending_stage >= $stage_idx_vpr and !$error_code ) {
                     my $relaxed_W = calculate_relaxed_W($min_W);
 
                     my @relaxed_W_extra_vpr_args = @forwarded_vpr_args;
+                    push(@relaxed_W_extra_vpr_args, ("--route"));
                     push(@relaxed_W_extra_vpr_args, ("--route_chan_width", "$relaxed_W"));
 
                     my $relaxed_W_log_file = "vpr.crit_path.out";
@@ -745,13 +717,6 @@ if ( $ending_stage >= $stage_idx_vpr and !$error_code ) {
             }
         }
 	} else { # specified channel width
-        find_and_move_files_for_vpr_stages($benchmark_name, {
-                pack => $explicit_pack_vpr_stage, 
-                place => $explicit_place_vpr_stage, 
-                route => $explicit_route_vpr_stage, 
-                analysis => $explicit_analysis_vpr_stage, 
-        });
-
         my $fixed_W_log_file = "vpr.out";
 
         my $rr_graph_out_file = "rr_graph.xml";
@@ -783,13 +748,6 @@ if ( $ending_stage >= $stage_idx_vpr and !$error_code ) {
         my $do_second_vpr_run = ($verify_rr_graph or $check_route or $check_place);
 
         if ($do_second_vpr_run) {
-            find_and_move_files_for_vpr_stages($benchmark_name, {
-                    pack => $explicit_pack_vpr_stage, 
-                    place => $explicit_place_vpr_stage, 
-                    route => $explicit_route_vpr_stage, 
-                    analysis => $explicit_analysis_vpr_stage, 
-            });
-
             my @second_run_extra_vpr_args = @forwarded_vpr_args;
 
             my $rr_graph_out_file2 = "rr_graph2.xml";
@@ -1294,18 +1252,6 @@ sub xml_find_mem_size {
 	return xml_find_mem_size_recursive($memory_pb);
 }
 
-sub find_and_move_newest {
-    my $benchmark_name = shift();
-    my $file_type = shift();
-
-    my $found_prev = system("$vtr_flow_path/scripts/mover.sh \"*$benchmark_name*/*.$file_type\" ../../../ $temp_dir");
-    if ($found_prev ne 0) {
-        die "$file_type file not found for $benchmark_name\n";
-    }
-
-    return 1; #Found
-}
-
 sub find_postsynthesis_netlist {
     my $file_name = $_;
     if ($file_name =~ /_post_synthesis\.blif/) {
@@ -1394,32 +1340,5 @@ sub calculate_relaxed_W {
     $relaxed_W += $relaxed_W % 2;
 
     return $relaxed_W;
-}
-
-sub find_and_move_files_for_vpr_stages() {
-    my ($benchmark_name, $stages) = @_;
-
-    my @extensions = ();
-
-    my $pack = (defined $stages->{pack} and $stages->{pack});
-    my $place = (defined $stages->{place} and $stages->{place});
-    my $route = (defined $stages->{route} and $stages->{route});
-    my $analysis = (defined $stages->{analysis} and $stages->{analysis});
-
-    if ($place or $route or $analysis) {
-        push(@extensions, "net");
-    }
-
-    if ($route or $analysis) {
-        push(@extensions, "place");
-    }
-
-    if ($analysis) {
-        push(@extensions, "route");
-    }
-
-    foreach my $extension (@extensions) {
-        find_and_move_newest($benchmark_name, $extension);
-    }
 }
 

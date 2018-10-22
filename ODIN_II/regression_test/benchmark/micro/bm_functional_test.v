@@ -44,12 +44,6 @@ always @(posedge clock or negedge reset_n)
 begin
 	if (~reset_n)
 	begin
-		counter <= 0;
-		out1<= 0;
-		out0<= 0;
-	end
-	else
-	begin
 		case (counter)
 			8'b00000000: out0 <= a_in & b_in;
 			8'b00000001: out0 <= a_in | b_in;
@@ -79,6 +73,11 @@ begin
 			counter <= 0;
 		else
 			counter <= counter + 1;	
+	end
+	else begin
+		counter <= 0;
+		out1<= 0;
+		out0<= 0;
 	end
 end
 

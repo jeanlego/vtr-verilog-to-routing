@@ -22,21 +22,13 @@ using namespace std;
 
 #include "tatum/error.hpp"
 
+#include "vpr_exit_codes.h"
 #include "vpr_error.h"
 #include "vpr_api.h"
 #include "vpr_signal_handler.h"
 #include "vpr_tatum_error.h"
 
 #include "globals.h"
-
-/*
- * Exit codes to signal success/failure to scripts
- * calling vpr
- */
-constexpr int SUCCESS_EXIT_CODE = 0; //Everything OK
-constexpr int ERROR_EXIT_CODE = 1; //Something went wrong internally
-constexpr int UNIMPLEMENTABLE_EXIT_CODE = 2; //Could not implement (e.g. unroutable)
-constexpr int INTERRUPTED_EXIT_CODE = 3; //VPR was interrupted by the user (e.g. SIGINT/ctr-C)
 
 /**
  * VPR program
@@ -69,32 +61,35 @@ int main(int argc, const char **argv) {
 
         bool flow_succeeded = vpr_flow(vpr_setup, Arch);
         if (!flow_succeeded) {
+            VTR_LOG("Failed to implement circuit\n");
             return UNIMPLEMENTABLE_EXIT_CODE;
         }
 
         auto& timing_ctx = g_vpr_ctx.timing();
-        vtr::printf_info("Timing analysis took %g seconds (%g STA, %g slack) (%d full updates).\n",
+        VTR_LOG("Timing analysis took %g seconds (%g STA, %g slack) (%d full updates).\n",
                 timing_ctx.stats.timing_analysis_wallclock_time(),
                 timing_ctx.stats.sta_wallclock_time,
                 timing_ctx.stats.slack_wallclock_time,
                 timing_ctx.stats.num_full_updates);
 #ifdef ENABLE_CLASSIC_VPR_STA
-        vtr::printf_info("Old VPR Timing analysis took %g seconds (%g STA, %g delay annotitaion) (%d full updates).\n",
+        VTR_LOG("Old VPR Timing analysis took %g seconds (%g STA, %g delay annotitaion) (%d full updates).\n",
                 timing_ctx.stats.old_timing_analysis_wallclock_time(),
                 timing_ctx.stats.old_sta_wallclock_time,
                 timing_ctx.stats.old_delay_annotation_wallclock_time,
                 timing_ctx.stats.num_old_sta_full_updates);
-        vtr::printf_info("\tSTA       Speed-up: %.2fx\n",
+        VTR_LOG("\tSTA       Speed-up: %.2fx\n",
                 timing_ctx.stats.old_sta_wallclock_time / timing_ctx.stats.sta_wallclock_time);
-        vtr::printf_info("\tSTA+Slack Speed-up: %.2fx\n",
+        VTR_LOG("\tSTA+Slack Speed-up: %.2fx\n",
                 timing_ctx.stats.old_timing_analysis_wallclock_time() / timing_ctx.stats.timing_analysis_wallclock_time());
 #endif
 
         /* free data structures */
         vpr_free_all(Arch, vpr_setup);
 
+        VTR_LOG("Implemented circuit successfully\n");
+
     } catch (const tatum::Error& tatum_error) {
-        vtr::printf_error(__FILE__, __LINE__, "%s\n", format_tatum_error(tatum_error).c_str());
+        VTR_LOG_ERROR( "%s\n", format_tatum_error(tatum_error).c_str());
 
         return ERROR_EXIT_CODE;
 
@@ -108,7 +103,7 @@ int main(int argc, const char **argv) {
         }
 
     } catch (const vtr::VtrError& vtr_error) {
-        vtr::printf_error(__FILE__, __LINE__, "%s:%d %s\n", vtr_error.filename_c_str(), vtr_error.line(), vtr_error.what());
+        VTR_LOG_ERROR( "%s:%d %s\n", vtr_error.filename_c_str(), vtr_error.line(), vtr_error.what());
 
         return ERROR_EXIT_CODE;
     }

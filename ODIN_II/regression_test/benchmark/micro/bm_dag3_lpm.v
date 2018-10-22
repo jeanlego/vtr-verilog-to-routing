@@ -2,14 +2,12 @@
 `define BITS 2         // Bit width of the operands
 
 module 	bm_dag3_lpm(clock, 
-		reset_n, 
 		a_in, 
 		b_in, 
 		out);
 
 // SIGNAL DECLARATIONS
 input	clock;
-input 	reset_n;
 
 input [`BITS-1:0] a_in;
 input [`BITS-1:0] b_in;

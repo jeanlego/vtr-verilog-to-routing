@@ -36,6 +36,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 #include "simulate_blif.h"
 #include "vtr_util.h"
 #include "vtr_memory.h"
+#include "node_creation_library.h"
 
 #define TOKENS     " \t\n"
 #define GND_NAME   "gnd"
@@ -138,7 +139,7 @@ int count_blif_lines(FILE *file);
 void read_blif(char * blif_file)
 {
 	char local_blif[255];
-	sprintf(local_blif, "%s", blif_file);
+	odin_sprintf(local_blif, "%s", blif_file);
 
 	verilog_netlist = allocate_netlist();
 	/*Opening the blif file */
@@ -374,6 +375,9 @@ void create_latch_node_and_driver(FILE *file, hashtable_t *output_nets_hash)
 		new_node->has_initial_value = TRUE;
 	}
 
+	// read in type of edge
+	new_node->edge_type = edge_type_blif_enum(names[2]);
+
 	/* allocate the output pin (there is always one output pin) */
 	allocate_more_output_pins(new_node, 1);
 	add_output_port_information(new_node, 1);
@@ -550,7 +554,7 @@ void create_hard_block_nodes(hard_block_models *models, FILE *file, hashtable_t 
 
 	// Name the node subcircuit_name~hard_block_number so that the name is unique.
 	static long hard_block_number = 0;
-	sprintf(buffer, "%s~%ld", subcircuit_name, hard_block_number++);
+	odin_sprintf(buffer, "%s~%ld", subcircuit_name, hard_block_number++);
 	new_node->name = make_full_ref_name(buffer, NULL, NULL, NULL,-1);
 
 	// Determine the type of hard block.
@@ -1517,7 +1521,7 @@ char *generate_hard_block_ports_signature(hard_block_ports *ports)
 	for (j = 0; j < ports->count; j++)
 	{
 		char buffer1[READ_BLIF_BUFFER];
-		sprintf(buffer1, "%s_%d_", ports->names[j], ports->sizes[j]);
+		odin_sprintf(buffer1, "%s_%d_", ports->names[j], ports->sizes[j]);
 		strcat(buffer, buffer1);
 	}
 	return vtr::strdup(buffer);

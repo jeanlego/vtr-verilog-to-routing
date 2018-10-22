@@ -34,6 +34,7 @@
 #include "vtr_assert.h"
 #include "vtr_ndmatrix.h"
 #include "vtr_vector_map.h"
+#include "vtr_util.h"
 
 /*******************************************************************************
  * Global data types and constants
@@ -97,6 +98,12 @@ constexpr const char* EMPTY_BLOCK_NAME = "EMPTY";
 #ifndef UNDEFINED
 #define UNDEFINED -1
 #endif
+
+
+enum class e_route_bb_update {
+    STATIC, //Router net bounding boxes are not updated
+    DYNAMIC //Rotuer net bounding boxes are updated
+};
 
 enum class e_const_gen_inference {
     NONE, //No constant generator inference
@@ -287,6 +294,34 @@ struct t_pb {
     //Returns true if this pb corresponds to a primitive block (i.e. in the AtomNetlist)
     bool is_primitive() const {
         return child_pbs == nullptr;
+    }
+
+    std::string hierarchical_type_name() const {
+        std::vector<std::string> names;
+
+        int child_mode = OPEN;
+        for (const t_pb* curr = this; curr != nullptr; curr = curr->parent_pb) {
+            std::string type_name;
+
+            //Type
+            if (curr->pb_graph_node) {
+                type_name = curr->pb_graph_node->pb_type->name;
+                type_name += "[" + std::to_string(curr->pb_graph_node->placement_index) + "]";
+
+                //Mode
+                if (child_mode != OPEN) {
+                    std::string mode_name = curr->pb_graph_node->pb_type->modes[child_mode].name;
+                    type_name += "[" + mode_name + "]";
+                }
+            }
+
+            child_mode = curr->mode; //Save the mode of curr since it will be child on next iteration
+
+            names.push_back(type_name);
+        }
+
+        //We walked up from the leaf to root, so we join in reverse order
+        return vtr::join(names.rbegin(), names.rend(), "/");
     }
 
     //Returns the bit index into the AtomPort for the specified primitive
@@ -714,14 +749,15 @@ struct t_netlist_opts {
     bool sweep_dangling_nets = true;
     bool sweep_constant_primary_outputs = false;
 
-    bool verbose_sweep = false; //Verbose output during netlist cleaning
+    int netlist_verbosity = 1; //Verbose output during netlist cleaning
 };
 
 //Should a stage in the CAD flow be skipped, loaded from a file, or performed
 enum e_stage_action {
     STAGE_SKIP = 0,
     STAGE_LOAD,
-    STAGE_DO
+    STAGE_DO,
+    STAGE_AUTO
 };
 
 /* Options for packing
@@ -745,7 +781,7 @@ struct t_packer_opts {
 	bool auto_compute_inter_cluster_net_delay;
 	e_unrelated_clustering allow_unrelated_clustering;
 	bool connection_driven;
-	bool debug_clustering;
+	int pack_verbosity;
     bool enable_pin_feasibility_filter;
     std::vector<std::string> target_external_pin_util;
 	e_stage_action doPacking;
@@ -881,6 +917,12 @@ enum class e_timing_report_detail {
     //DETAILED_ROUTING, //Show inter-block routing resources used
 };
 
+enum class e_incr_reroute_delay_ripup {
+    ON,
+    OFF,
+    AUTO
+};
+
 constexpr int NO_FIXED_CHANNEL_WIDTH = -1;
 
 struct t_router_opts {
@@ -891,6 +933,7 @@ struct t_router_opts {
 	float bend_cost;
 	int max_router_iterations;
 	int min_incremental_reroute_fanout;
+    e_incr_reroute_delay_ripup incr_reroute_delay_ripup;
 	int bb_factor;
 	enum e_route_type route_type;
 	int fixed_channel_width;
@@ -910,6 +953,10 @@ struct t_router_opts {
 	e_stage_action doRouting;
 	enum e_routing_failure_predictor routing_failure_predictor;
 	enum e_routing_budgets_algorithm routing_budgets_algorithm;
+    bool save_routing_per_iteration;
+    float congested_routing_iteration_threshold_frac;
+    e_route_bb_update route_bb_update;
+    int router_debug_net;
 };
 
 struct t_analysis_opts {
@@ -1184,6 +1231,7 @@ struct t_vpr_setup {
     std::string device_layout;
     e_constant_net_method constant_net_method; //How constant nets should be handled
     e_clock_modeling clock_modeling; //How clocks should be handled
+    bool exit_before_pack; //Exits early before starting packing (useful for collecting statistics without running/loading any stages)
 };
 
 class RouteStatus {

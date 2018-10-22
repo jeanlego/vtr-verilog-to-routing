@@ -39,6 +39,7 @@ use File::Spec;
 use File::Basename;
 use File::Path qw(make_path);
 use POSIX qw(strftime);
+use Time::HiRes qw(time);
 
 # Function Prototypes
 sub trim;
@@ -53,6 +54,8 @@ sub ret_expected_vpr_status;
 sub format_human_readable_time;
 sub format_human_readable_memory;
 sub uniq;
+
+my $start_time = time();
 
 # Get Absolute Path of 'vtr_flow
 Cwd::abs_path($0) =~ m/(.*vtr_flow)/;
@@ -186,6 +189,8 @@ foreach my $task (@tasks) {
 #Run all the actions (potentially in parallel)
 my $num_total_failures = run_actions(\@all_task_actions);
 
+my $elapsed_time = time() - $start_time;
+printf("Elapsed time: %.1f seconds\n", $elapsed_time);
 exit $num_total_failures;
 
 ##############################################################
@@ -404,7 +409,7 @@ sub generate_single_task_actions {
 	chmod( 0775, $run_dir );
 
     #Create a symlink that points to the latest run
-    my $symlink_name = "run_latest";
+    my $symlink_name = "latest";
     if (-l $symlink_name) {
         unlink $symlink_name;  #Remove link if it exists
     }

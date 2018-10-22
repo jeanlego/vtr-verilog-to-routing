@@ -99,10 +99,10 @@ static void print_stats() {
 
 	for (itype = 0; itype < device_ctx.num_block_types; itype++) {
 		if (num_clb_types[itype] == 0) {
-			vtr::printf_info("\t%s: # blocks: %d, average # input + clock pins used: %g, average # output pins used: %g\n",
+			VTR_LOG("\t%s: # blocks: %d, average # input + clock pins used: %g, average # output pins used: %g\n",
 					device_ctx.block_types[itype].name, num_clb_types[itype], 0.0, 0.0);
 		} else {
-			vtr::printf_info("\t%s: # blocks: %d, average # input + clock pins used: %g, average # output pins used: %g\n",
+			VTR_LOG("\t%s: # blocks: %d, average # input + clock pins used: %g, average # output pins used: %g\n",
 					device_ctx.block_types[itype].name, num_clb_types[itype],
 					(float) num_clb_inputs_used[itype] / (float) num_clb_types[itype],
 					(float) num_clb_outputs_used[itype] / (float) num_clb_types[itype]);
@@ -115,7 +115,7 @@ static void print_stats() {
 			total_nets_absorbed++;
 		}
 	}
-	vtr::printf_info("Absorbed logical nets %d out of %d nets, %d nets not absorbed.\n",
+	VTR_LOG("Absorbed logical nets %d out of %d nets, %d nets not absorbed.\n",
 			total_nets_absorbed, (int)atom_ctx.nlist.nets().size(), (int)atom_ctx.nlist.nets().size() - total_nets_absorbed);
 	free(num_clb_types);
 	free(num_clb_inputs_used);
@@ -208,10 +208,8 @@ static void clustering_xml_open_block(pugi::xml_node parent_node, t_type_ptr typ
 			if (pb_type->ports[i].type == OUT_PORT) {
 				VTR_ASSERT(!pb_type->ports[i].is_clock);
 				for (j = 0; j < pb_type->ports[i].num_pins; j++) {
-					node_index =
-							pb_graph_node->output_pins[port_index][j].pin_count_in_cluster;
-					if (pb_type->num_modes > 0
-						&& pb_route[node_index].atom_net_id) {
+					node_index = pb_graph_node->output_pins[port_index][j].pin_count_in_cluster;
+					if (pb_type->num_modes > 0 && pb_route[node_index].atom_net_id) {
 						prev_node = pb_route[node_index].driver_pb_pin_id;
 						t_pb_graph_pin *prev_pin = pb_graph_pin_lookup_from_index_by_type[type->index][prev_node];
 						for(prev_edge = 0; prev_edge < prev_pin->num_output_edges; prev_edge++) {
@@ -221,10 +219,8 @@ static void clustering_xml_open_block(pugi::xml_node parent_node, t_type_ptr typ
 							}
 						}
 						VTR_ASSERT(prev_edge < prev_pin->num_output_edges);
-						mode_of_edge =
-								prev_pin->output_edges[prev_edge]->interconnect->parent_mode_index;
-						VTR_ASSERT(
-								mode == nullptr || &pb_type->modes[mode_of_edge] == mode);
+						mode_of_edge = prev_pin->output_edges[prev_edge]->interconnect->parent_mode_index;
+						VTR_ASSERT(mode == nullptr || &pb_type->modes[mode_of_edge] == mode);
 						VTR_ASSERT(mode_of_edge == 0); /* for now, unused blocks must always default to use mode 0 */
 						mode = &pb_type->modes[mode_of_edge];
 					}
@@ -579,7 +575,7 @@ void output_clustering(const vtr::vector_map<ClusterBlockId, std::vector<t_intra
 			break;
 
 		default:
-			vtr::printf_error(__FILE__, __LINE__,
+			VTR_LOG_ERROR(
 					"in output_netlist: Unexpected type %d for atom block %s.\n",
 					type, atom_ctx.nlist.block_name(blk_id).c_str());
 		}

@@ -13,6 +13,7 @@ using namespace std;
 #include "vtr_matrix.h"
 #include "vtr_math.h"
 #include "vtr_log.h"
+#include "vtr_time.h"
 
 #include "vpr_types.h"
 #include "vpr_utils.h"
@@ -333,8 +334,7 @@ static void build_rr_graph(
         int *num_rr_switches,
         int *Warnings) {
 
-    vtr::printf_info("Starting build routing resource graph...\n");
-    clock_t begin = clock();
+    vtr::ScopedStartFinishTimer timer("Build routing resource graph");
 
     /* Reset warning flag */
     *Warnings = RR_GRAPH_NO_WARN;
@@ -447,7 +447,7 @@ static void build_rr_graph(
             for (int j = 0; j < device_ctx.block_types[i].num_pins; ++j) {
                 for (int k = 0; k < num_seg_types; k++) {
 #ifdef VERBOSE
-                    vtr::printf_info("Fc Actual Values: type = %s, pin = %d (%s), "
+                    VTR_LOG("Fc Actual Values: type = %s, pin = %d (%s), "
                         "seg = %d (%s), Fc_out = %d, Fc_in = %d.\n",
                         device_ctx.block_types[i].name,
                         j,
@@ -644,9 +644,6 @@ static void build_rr_graph(
     if (clb_to_clb_directs != nullptr) {
         free(clb_to_clb_directs);
     }
-
-    float elapsed_time = (float) (clock() - begin) / CLOCKS_PER_SEC;
-    vtr::printf_info("Build routing resource graph took %g seconds\n", elapsed_time);
 }
 
 /* Allocates and loads the global rr_switch_inf array based on the global
@@ -704,7 +701,7 @@ static int alloc_and_load_rr_switch_inf(const int num_arch_switches, const float
         //Instead of throwing an error we issue a warning. This means that check_rr_graph() etc. will run to give more information
         //and allow graphics to be brought up for users to debug their architectures.
         (*wire_to_rr_ipin_switch) = OPEN;
-        vtr::printf_warning(__FILE__, __LINE__,
+        VTR_LOG_WARN(
                 "No switch found for the ipin cblock in RR graph. Check if there is an error in arch file, or if no connection blocks are being built in RR graph\n");
     }
 
@@ -2117,7 +2114,7 @@ static void check_all_tracks_reach_pins(t_type_ptr type,
 
     for (int track = 0; track < max_chan_width; ++track) {
         if (num_conns_to_track[track] <= 0) {
-            vtr::printf_error(__FILE__, __LINE__,
+            VTR_LOG_ERROR(
                     "check_all_tracks_reach_pins: Track %d does not connect to any CLB %ss.\n",
                     track, (ipin_or_opin == DRIVER ? "OPIN" : "IPIN"));
         }

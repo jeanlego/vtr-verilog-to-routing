@@ -7,8 +7,8 @@ module bm_DL_Dff_w_synch_reset(D, Clock, Resetn, Q);
 	
 	always @(posedge Clock)
 		if (!Resetn)
-			Q <= 0;
-		else 
 			Q <= D;
+		else 
+			Q <= 0;
 	
 endmodule

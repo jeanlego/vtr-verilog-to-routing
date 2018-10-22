@@ -1,22 +1,19 @@
 /* Pg 287 - BCD adder */
-
+`define BITS 4
 module bm_DL_BCD_adder (Cin, X, Y, S, Cout, Z);
+
 	input Cin;
-	input [3:0] X, Y;
-	output [3:0] S;
+	input [`BITS-1:0] X, Y;
+
+	output [`BITS-1:0] S;
 	output Cout;
-	reg [3:0] S;
-	reg Cout;
-	output [4:0] Z;
-	reg [4:0] Z;
-	
-	always @(X or Y or Cin)
-	begin
-		Z = X + Y + Cin;
-		if (Z[3:0] < 4'b1010)
-			{Cout, S} = Z;
-		else
-			{Cout, S} = Z + 6;
-	end
+	output [`BITS:0] Z;
+
+	wire [`BITS:0] tmp;
+
+	assign Z = X + Y + Cin;
+	assign tmp = (Z[`BITS-1:0] < 4'b1010)? Z : (Z + 4'b0110);
+	assign Cout = tmp[`BITS];
+	assign S = tmp[`BITS-1:0];
 	
 endmodule

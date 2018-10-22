@@ -7,6 +7,7 @@
 
 #include "vtr_assert.h"
 #include "vtr_log.h"
+#include "vtr_time.h"
 
 #include "vpr_utils.h"
 #include "vpr_types.h"
@@ -36,11 +37,9 @@
 
 #define CONGESTED_SLOPE_VAL -0.04
 
-constexpr float CONGESTED_ITERATION_THRESHOLD_FACTOR = 0.8;
-
 enum class RouterCongestionMode {
     NORMAL,
-    CONGESTED
+    CONFLICTED
 };
 
 class WirelengthInfo {
@@ -125,11 +124,9 @@ struct t_timing_driven_node_costs {
  * File-scope variables
  */
 
-#ifdef ROUTER_DEBUG
 //Run-time flag to control when router debug information is printed
-bool router_debug = true;
-
-#endif
+//Note only enables debug output if compiled with VTR_ENABLE_DEBUG_LOGGING defined
+bool f_router_debug = true;
 
 /******************** Subroutines local to route_timing.c ********************/
 
@@ -197,7 +194,7 @@ static WirelengthInfo calculate_wirelength_info();
 static OveruseInfo calculate_overuse_info();
 
 static void print_route_status_header();
-static void print_route_status(int itry, double elapsed_sec, const RouterStats& router_stats,
+static void print_route_status(int itry, double elapsed_sec, int num_bb_updated, const RouterStats& router_stats,
         const OveruseInfo& overuse_info, const WirelengthInfo& wirelength_info,
         std::shared_ptr<const SetupHoldTimingInfo> timing_info,
         float est_success_iteration);
@@ -205,6 +202,13 @@ static void pretty_print_uint(const char* prefix, size_t value, int num_digits, 
 static int round_up(float x);
 
 static std::string describe_unrouteable_connection(const int source_node, const int sink_node);
+
+static bool is_high_fanout(int fanout);
+
+static size_t dynamic_update_bounding_boxes();
+static t_bb calc_current_bb(const t_trace* head);
+
+static void enable_router_debug(const t_router_opts& router_opts, ClusterNetId net);
 
 /************************ Subroutine definitions *****************************/
 bool try_timing_driven_route(t_router_opts router_opts,
@@ -221,6 +225,9 @@ bool try_timing_driven_route(t_router_opts router_opts,
      * must have already been allocated, and net_delay must have been allocated. *
      * Returns true if the routing succeeds, false otherwise.                    */
 
+    auto& cluster_ctx = g_vpr_ctx.clustering();
+    auto& route_ctx = g_vpr_ctx.mutable_routing();
+
     //Initially, the router runs normally trying to reduce congestion while
     //balancing other metrics (timing, wirelength, run-time etc.)
     RouterCongestionMode router_congestion_mode = RouterCongestionMode::NORMAL;
@@ -228,14 +235,8 @@ bool try_timing_driven_route(t_router_opts router_opts,
     //Initialize and properly size the lookups for profiling
     profiling::profiling_initialization(get_max_pins_per_net());
 
-    auto& cluster_ctx = g_vpr_ctx.clustering();
-    auto& route_ctx = g_vpr_ctx.mutable_routing();
-
-    //sort so net with most sinks is first.
-    auto sorted_nets = vtr::vector_map<ClusterNetId,ClusterNetId>();
-    for (auto net_id : cluster_ctx.clb_nlist.nets()) {
-        sorted_nets.push_back(net_id);
-    }
+    //sort so net with most sinks is routed first.
+    auto sorted_nets = std::vector<ClusterNetId>(cluster_ctx.clb_nlist.nets().begin(), cluster_ctx.clb_nlist.nets().end());
     std::sort(sorted_nets.begin(), sorted_nets.end(), more_sinks_than());
 
     /*
@@ -251,8 +252,7 @@ bool try_timing_driven_route(t_router_opts router_opts,
         VTR_ASSERT_MSG(router_opts.routing_failure_predictor == OFF, "Unrecognized routing failure predictor setting");
     }
 
-    float high_effort_congestion_mode_iteration_threshold = std::numeric_limits<float>::infinity(); //Default no early abort
-    high_effort_congestion_mode_iteration_threshold = CONGESTED_ITERATION_THRESHOLD_FACTOR * router_opts.max_router_iterations;
+    float high_effort_congestion_mode_iteration_threshold = router_opts.congested_routing_iteration_threshold_frac * router_opts.max_router_iterations;
 
     /* Set delay of global signals to zero. Non-global net delays are set by
        update_net_delays_from_route_tree() inside timing_driven_route_net(),
@@ -274,6 +274,12 @@ bool try_timing_driven_route(t_router_opts router_opts,
      * Routing parameters
      */
     float pres_fac = router_opts.first_iter_pres_fac; /* Typically 0 -> ignore cong. */
+    int bb_fac = router_opts.bb_factor;
+
+    //When routing conflicts are detected the bounding boxes are scaled
+    //by BB_SCALE_FACTOR every BB_SCALE_ITER_COUNT iterations
+    constexpr float BB_SCALE_FACTOR = 2;
+    constexpr int BB_SCALE_ITER_COUNT = 5; 
 
     /*
      * Routing status and metrics
@@ -283,6 +289,7 @@ bool try_timing_driven_route(t_router_opts router_opts,
     OveruseInfo overuse_info;
     tatum::TimingPathInfo critical_path;
     int itry; //Routing iteration number
+    int itry_conflicted_mode = 0;
 
     /*
      * On the first routing iteration ignore congestion to get reasonable net
@@ -291,10 +298,15 @@ bool try_timing_driven_route(t_router_opts router_opts,
      *
      * Subsequent iterations use the net delays from the previous iteration.
      */
+    RouterStats router_stats;
     print_route_status_header();
     timing_driven_route_structs route_structs;
+    float prev_iter_cumm_time = 0;
+    vtr::Timer iteration_timer;
+    int num_net_bounding_boxes_updated = 0;
     for (itry = 1; itry <= router_opts.max_router_iterations; ++itry) {
-        clock_t begin = clock();
+
+        RouterStats router_iteration_stats;
 
         /* Reset "is_routed" and "is_fixed" flags to indicate nets not pre-routed (yet) */
 		for (auto net_id : cluster_ctx.clb_nlist.nets()) {
@@ -316,19 +328,20 @@ bool try_timing_driven_route(t_router_opts router_opts,
             route_timing_info = make_constant_timing_info(0.);
         }
 
-        RouterStats router_stats;
-
         /*
          * Route each net
          */
-        for (auto net_id : cluster_ctx.clb_nlist.nets()) {
+        for (auto net_id : sorted_nets) {
+
+            enable_router_debug(router_opts, net_id);
+
             bool is_routable = try_timing_driven_route_net(
-                    sorted_nets[net_id],
+                    net_id,
                     itry,
                     pres_fac,
                     router_opts,
                     connections_inf,
-                    router_stats,
+                    router_iteration_stats,
                     route_structs.pin_criticality,
                     route_structs.rt_node_of_sink,
                     net_delay,
@@ -343,8 +356,6 @@ bool try_timing_driven_route(t_router_opts router_opts,
         // Make sure any CLB OPINs used up by subblocks being hooked directly to them are reserved for that purpose
         bool rip_up_local_opins = (itry == 1 ? false : true);
         reserve_locally_used_opins(pres_fac, router_opts.acc_fac, rip_up_local_opins);
-
-        float time = static_cast<float> (clock() - begin) / CLOCKS_PER_SEC;
 
         /*
          * Calculate metrics for the current routing
@@ -382,8 +393,13 @@ bool try_timing_driven_route(t_router_opts router_opts,
             VTR_ASSERT_SAFE(timing_driven_check_net_delays(net_delay));
         }
 
+        float iter_cumm_time = iteration_timer.elapsed_sec();
+        float iter_elapsed_time = iter_cumm_time - prev_iter_cumm_time;
+
         //Output progress
-        print_route_status(itry, time, router_stats, overuse_info, wirelength_info, timing_info, est_success_iteration);
+        print_route_status(itry, iter_elapsed_time, num_net_bounding_boxes_updated, router_iteration_stats, overuse_info, wirelength_info, timing_info, est_success_iteration);
+
+        prev_iter_cumm_time = iter_cumm_time;
 
         //Update graphics
         if (itry == 1) {
@@ -391,6 +407,17 @@ bool try_timing_driven_route(t_router_opts router_opts,
         } else {
             update_screen(ScreenUpdatePriority::MINOR, "Routing...", ROUTING, timing_info);
         }
+
+        if (router_opts.save_routing_per_iteration) {
+            std::string filename = vtr::string_fmt("iteration_%03d.route", itry);
+            print_route(nullptr, filename.c_str());
+        }
+
+        //Update router stats (total)
+        router_stats.connections_routed += router_iteration_stats.connections_routed;
+        router_stats.nets_routed += router_iteration_stats.nets_routed;
+        router_stats.heap_pushes += router_iteration_stats.heap_pushes;
+        router_stats.heap_pops += router_iteration_stats.heap_pops;
 
         /*
          * Are we finished?
@@ -413,7 +440,7 @@ bool try_timing_driven_route(t_router_opts router_opts,
             //Only abort if we have a significant number of overused resources
 
             if (!std::isnan(est_success_iteration) && est_success_iteration > abort_iteration_threshold) {
-                vtr::printf_info("Routing aborted, the predicted iteration for a successful route (%.1f) is too high.\n", est_success_iteration);
+                VTR_LOG("Routing aborted, the predicted iteration for a successful route (%.1f) is too high.\n", est_success_iteration);
                 break; //Abort
             }
         }
@@ -422,11 +449,15 @@ bool try_timing_driven_route(t_router_opts router_opts,
          * Prepare for the next iteration
          */
 
+        if (router_opts.route_bb_update == e_route_bb_update::DYNAMIC) {
+            num_net_bounding_boxes_updated = dynamic_update_bounding_boxes();
+        }
+
         if (itry >= high_effort_congestion_mode_iteration_threshold) {
             //We are approaching the maximum number of routing iterations,
-            //and still do not have a legal routing. Switch to a more congestion
-            //focused mode.
-            router_congestion_mode = RouterCongestionMode::CONGESTED;
+            //and still do not have a legal routing. Switch to a mode which
+            //focuses more on attempting to resolve routing conflicts.
+            router_congestion_mode = RouterCongestionMode::CONFLICTED;
         }
 
         //Update pres_fac and resource costs
@@ -442,10 +473,46 @@ bool try_timing_driven_route(t_router_opts router_opts,
             pathfinder_update_cost(pres_fac, router_opts.acc_fac);
         }
 
+        if (router_congestion_mode == RouterCongestionMode::CONFLICTED) {
+
+            //The design appears to have routing conflicts which are difficult to resolve:
+            //  1) Don't re-route legal connections due to delay. This allows
+            //     the router to focus on the actual conflicts
+            //  2) Increase the net bounding boxes. This potentially allows 
+            //     the router to route around otherwise congested regions 
+            //     (at the cost of high run-time).
+
+            //Increase the size of the net bounding boxes to give the router more 
+            //freedom to find alternate paths.
+            //
+            //In the case of routing conflicts there are multiple connections competing 
+            //for the same resources which can not resolve the congestion themselves.
+            //In normal routing mode we try to keep the bounding boxes small to minimize 
+            //run-time, but this can limits how far signals can detour (i.e. they can't 
+            //route outside the bounding box), which can cause conflicts to oscillate back
+            //and forth without resolving.
+            //
+            //By scaling the bounding boxes here, we slowly increase the router's search 
+            //space in hopes of it allowing signals to move further out of the way to 
+            //aleviate the conflicts.
+            if (itry_conflicted_mode % BB_SCALE_ITER_COUNT == 0) {
+                //We scale the bounding boxes by BB_SCALE_FACTOR,
+                //every BB_SCALE_ITER_COUNT iterations. This ensures
+                //that we give the router some time (BB_SCALE_ITER_COUNT) to try
+                //resolve/negotiate congestion at the new BB factor.
+                //
+                //Note that we increase the BB factor slowly to try and minimize 
+                //the bounding box size (since larger bounding boxes slow the router down).
+                bb_fac *= BB_SCALE_FACTOR;
+
+                route_ctx.route_bb = load_route_bb(bb_fac);
+            }
+
+            ++itry_conflicted_mode;
+        }
+
+
         if (timing_info) {
-            /*
-             * Determine if any connection need to be forcibly re-routed due to timing
-             */
             if (itry == 1) {
                 // first iteration sets up the lower bound connection delays since only timing is optimized for
                 connections_inf.set_stable_critical_path_delay(critical_path.delay());
@@ -461,10 +528,18 @@ bool try_timing_driven_route(t_router_opts router_opts,
             } else {
                 bool stable_routing_configuration = true;
 
-                //If things are not too congested, then we should rip-up legal connections which are
-                //have poor delay characteristics
-                if (router_congestion_mode == RouterCongestionMode::NORMAL) {
-                    
+                /*
+                 * Determine if any connection need to be forcibly re-routed due to timing
+                 */
+
+                //Yes, if explicitly enabled
+                bool should_ripup_for_delay = (router_opts.incr_reroute_delay_ripup == e_incr_reroute_delay_ripup::ON);
+
+                //Or, if things are not too congested
+                should_ripup_for_delay |= (router_opts.incr_reroute_delay_ripup == e_incr_reroute_delay_ripup::AUTO 
+                                           && router_congestion_mode == RouterCongestionMode::NORMAL);
+
+                if (should_ripup_for_delay) {
                     if (connections_inf.critical_path_delay_grew_significantly(critical_path.delay())) {
                         // only need to forcibly reroute if critical path grew significantly
                         stable_routing_configuration = connections_inf.forcibly_reroute_connections(router_opts.max_criticality,
@@ -472,19 +547,6 @@ bool try_timing_driven_route(t_router_opts router_opts,
                             netlist_pin_lookup,
                             net_delay);
                     }
-                } else {
-                    VTR_ASSERT(router_congestion_mode == RouterCongestionMode::CONGESTED);
-
-                    //The design appears to be congested:
-                    //  1) Don't re-route legal connections due to delay. This allows
-                    //     the router to focus on the actual congestion
-                    //  2) Increase the net bounding boxes to the whole device. This
-                    //     potentially allows the router to route around otherwise congested
-                    //     regions (at the cost of high run-time).
-
-                    //Blow away the router bounding boxes
-                    // TODO: BBs only really need to be updated the first time we enter CONGESTED mode
-                    route_ctx.route_bb = load_route_bb(std::numeric_limits<int>::max());
                 }
 
                 // not stable if any connection needs to be forcibly rerouted
@@ -518,17 +580,20 @@ bool try_timing_driven_route(t_router_opts router_opts,
     if (routing_is_successful) {
         if (timing_info) {
             timing_driven_check_net_delays(net_delay);
-            vtr::printf_info("Completed net delay value cross check successfully.\n");
-            vtr::printf_info("Critical path: %g ns\n", 1e9 * critical_path.delay());
+            VTR_LOG("Completed net delay value cross check successfully.\n");
+            VTR_LOG("Critical path: %g ns\n", 1e9 * critical_path.delay());
         }
 
-        vtr::printf_info("Successfully routed after %d routing iterations.\n", itry);
+        VTR_LOG("Successfully routed after %d routing iterations.\n", itry);
     } else {
-        vtr::printf_info("Routing failed.\n");
-#ifdef ROUTER_DEBUG
-        print_invalid_routing_info();
+        VTR_LOG("Routing failed.\n");
+#ifdef VTR_ENABLE_DEBUG_LOGGING
+        if (f_router_debug) print_invalid_routing_info();
 #endif
     }
+
+    VTR_LOG("Router Stats: total_nets_routed: %zu total_connections_routed: %zu total_heap_pushes: %zu total_heap_pops: %zu\n",
+            router_stats.nets_routed, router_stats.connections_routed, router_stats.heap_pushes, router_stats.heap_pops);
 
     return routing_is_successful;
 }
@@ -576,7 +641,7 @@ bool try_timing_driven_route_net(ClusterNetId net_id, int itry, float pres_fac,
         if (is_routed) {
 			route_ctx.net_status[net_id].is_routed = true;
         } else {
-            vtr::printf_info("Routing failed.\n");
+            VTR_LOG("Routing failed.\n");
         }
     }
     return (is_routed);
@@ -704,9 +769,7 @@ bool timing_driven_route_net(ClusterNetId net_id, int itry, float pres_fac, floa
 
     unsigned int num_sinks = cluster_ctx.clb_nlist.net_sinks(net_id).size();
 
-#ifdef ROUTER_DEBUG
-    vtr::printf("Routing Net %zu (%zu sinks)\n", size_t(net_id), num_sinks);
-#endif
+    VTR_LOGV_DEBUG(f_router_debug, "Routing Net %zu (%zu sinks)\n", size_t(net_id), num_sinks);
 
     t_rt_node* rt_root = setup_routing_resources(itry, net_id, num_sinks, pres_fac, min_incremental_reroute_fanout, connections_inf, rt_node_of_sink);
     // after this point the route tree is correct
@@ -796,9 +859,8 @@ bool timing_driven_route_net(ClusterNetId net_id, int itry, float pres_fac, floa
     VTR_ASSERT_MSG(route_ctx.rr_node_route_inf[rt_root->inode].occ() <= device_ctx.rr_nodes[rt_root->inode].capacity(), "SOURCE should never be congested");
 
     // route tree is not kept persistent since building it from the traceback the next iteration takes almost 0 time
-#ifdef ROUTER_DEBUG
-    vtr::printf("Routed Net %zu (%zu sinks)\n", size_t(net_id), num_sinks);
-#endif
+    VTR_LOGV_DEBUG(f_router_debug, "Routed Net %zu (%zu sinks)\n", size_t(net_id), num_sinks);
+
     free_route_tree(rt_root);
     return (true);
 }
@@ -820,9 +882,7 @@ static bool timing_driven_route_sink(int itry, ClusterNetId net_id, unsigned ita
 
     t_bb bounding_box = route_ctx.route_bb[net_id];
 
-#ifdef ROUTER_DEBUG
-    vtr::printf("Net %zu Target %d\n", size_t(net_id), itarget);
-#endif
+    VTR_LOGV_DEBUG(f_router_debug, "Net %zu Target %d\n", size_t(net_id), itarget);
 
     if (itarget > 0 && itry > 5) {
         /* Enough iterations given to determine opin, to speed up legal solution, do not let net use two opins */
@@ -841,7 +901,7 @@ static bool timing_driven_route_sink(int itry, ClusterNetId net_id, unsigned ita
     if (cheapest == nullptr) {
 		ClusterBlockId src_block = cluster_ctx.clb_nlist.net_driver_block(net_id);
 		ClusterBlockId sink_block = cluster_ctx.clb_nlist.pin_block(*(cluster_ctx.clb_nlist.net_pins(net_id).begin() + target_pin));
-        vtr::printf("Failed to route connection from '%s' to '%s' for net '%s'\n",
+        VTR_LOG("Failed to route connection from '%s' to '%s' for net '%s'\n",
                     cluster_ctx.clb_nlist.block_name(src_block).c_str(),
 					cluster_ctx.clb_nlist.block_name(sink_block).c_str(),
                     cluster_ctx.clb_nlist.net_name(net_id).c_str());
@@ -895,7 +955,7 @@ t_heap * timing_driven_route_connection(int source_node, int sink_node, float ta
     ++router_stats.heap_pops;
 
     if (cheapest == nullptr) {
-        vtr::printf_info("%s\n", describe_unrouteable_connection(source_node, sink_node).c_str());
+        VTR_LOG("%s\n", describe_unrouteable_connection(source_node, sink_node).c_str());
 
         reset_path_costs();
         free_route_tree(rt_root);
@@ -904,9 +964,7 @@ t_heap * timing_driven_route_connection(int source_node, int sink_node, float ta
 
 
     int inode = cheapest->index;
-#ifdef ROUTER_DEBUG
-    if (router_debug) vtr::printf("  Popping node %d\n", inode);
-#endif
+    VTR_LOGV_DEBUG(f_router_debug, "  Popping node %d\n", inode);
     while (inode != sink_node) {
         float old_total_cost = route_ctx.rr_node_route_inf[inode].path_cost;
         float old_back_cost = route_ctx.rr_node_route_inf[inode].backward_path_cost;
@@ -924,13 +982,10 @@ t_heap * timing_driven_route_connection(int source_node, int sink_node, float ta
 
         if (old_total_cost > new_total_cost && old_back_cost > new_back_cost) {
 
-#ifdef ROUTER_DEBUG
-            if (router_debug) vtr::printf("    Better cost to %d\n", inode);
-#endif
+            VTR_LOGV_DEBUG(f_router_debug, "    Better cost to %d\n", inode);
             for (t_heap_prev prev : cheapest->previous) {
-#ifdef ROUTER_DEBUG
-                if (router_debug) vtr::printf("      Setting path costs for assicated node %d (from %d edge %d)\n", prev.to_node, prev.from_node, prev.from_edge);
-#endif
+                VTR_LOGV_DEBUG(f_router_debug, "      Setting path costs for assicated node %d (from %d edge %d)\n", prev.to_node, prev.from_node, prev.from_edge);
+
                 add_to_mod_list(prev.to_node, modified_rr_node_inf);
 
                 route_ctx.rr_node_route_inf[prev.to_node].prev_node = prev.from_node;
@@ -950,7 +1005,7 @@ t_heap * timing_driven_route_connection(int source_node, int sink_node, float ta
         ++router_stats.heap_pops;
 
         if (cheapest == nullptr) { /* Impossible routing.  No path for net. */
-            vtr::printf_info("%s\n", describe_unrouteable_connection(source_node, sink_node).c_str());
+            VTR_LOG("%s\n", describe_unrouteable_connection(source_node, sink_node).c_str());
 
             reset_path_costs();
             free_route_tree(rt_root);
@@ -958,13 +1013,9 @@ t_heap * timing_driven_route_connection(int source_node, int sink_node, float ta
         }
 
         inode = cheapest->index;
-#ifdef ROUTER_DEBUG
-        if (router_debug) vtr::printf("  Popping node %d\n", inode);
-#endif
+        VTR_LOGV_DEBUG(f_router_debug, "  Popping node %d\n", inode);
     }
-#ifdef ROUTER_DEBUG
-    if (router_debug) vtr::printf("  Found target %d\n", inode);
-#endif
+    VTR_LOGV_DEBUG(f_router_debug, "  Found target %d\n", inode);
 
     return cheapest;
 }
@@ -1131,9 +1182,7 @@ static void add_route_tree_to_heap(t_rt_node * rt_node, int target_node,
             tot_cost += pow(max(zero, min_delay - tot_cost), 2) / 100e-12;
         }
 
-#ifdef ROUTER_DEBUG
-        if (router_debug) vtr::printf("Adding node %d to heap from init route tree\n", inode);
-#endif
+        VTR_LOGV_DEBUG(f_router_debug, "Adding node %d to heap from init route tree\n", inode);
 
         heap_::push_back_node(inode, tot_cost, NO_PREVIOUS, NO_PREVIOUS,
                 backward_path_cost, R_upstream);
@@ -1171,7 +1220,7 @@ static void timing_driven_expand_neighbours(t_heap *current,
     int target_xhigh = device_ctx.rr_nodes[target_node].xhigh();
     int target_yhigh = device_ctx.rr_nodes[target_node].yhigh();
 
-    bool high_fanout = num_sinks >= HIGH_FANOUT_NET_LIM;
+    bool high_fanout = is_high_fanout(num_sinks);
 
     int num_edges = device_ctx.rr_nodes[inode].num_edges();
     for (int iconn = 0; iconn < num_edges; iconn++) {
@@ -1266,16 +1315,16 @@ static void timing_driven_expand_node(const float criticality_fac, const float b
         t_heap* current, const int from_node, const int to_node, const int iconn, const int target_node) {
 
 
-#ifdef ROUTER_DEBUG
-    if (router_debug) {
+#ifdef VTR_ENABLE_DEBUG_LOGGING
+    if (f_router_debug) {
         auto& device_ctx = g_vpr_ctx.device();
         bool reached_via_non_configurable_edge = !device_ctx.rr_nodes[from_node].edge_is_configurable(iconn);
         if (reached_via_non_configurable_edge) {
-            vtr::printf("        Force Expanding to node %d", to_node);
+            VTR_LOG("        Force Expanding to node %d", to_node);
         } else {
-            vtr::printf("      Expanding to node %d", to_node);
+            VTR_LOG("      Expanding to node %d", to_node);
         }
-        vtr::printf("\n");
+        VTR_LOG("\n");
     }
 #endif
 
@@ -1595,7 +1644,7 @@ static int mark_node_expansion_by_bin(int source_node, int target_node,
     target_xhigh = device_ctx.rr_nodes[target_node].xhigh();
     target_yhigh = device_ctx.rr_nodes[target_node].yhigh();
 
-    if (num_sinks < HIGH_FANOUT_NET_LIM) {
+    if (!is_high_fanout(num_sinks)) {
         /* This algorithm only applies to high fanout nets */
         return 1;
     }
@@ -1758,7 +1807,7 @@ static bool early_exit_heuristic(const WirelengthInfo& wirelength_info) {
        Heuristic: If total wirelength used in first routing iteration is X% of total available wirelength, exit */
 
     if (wirelength_info.used_wirelength_ratio() > FIRST_ITER_WIRELENTH_LIMIT) {
-        vtr::printf_info("Wire length usage ratio %g exceeds limit of %g, fail routing.\n",
+        VTR_LOG("Wire length usage ratio %g exceeds limit of %g, fail routing.\n",
                 wirelength_info.used_wirelength_ratio(),
                 FIRST_ITER_WIRELENTH_LIMIT);
         return true;
@@ -1872,7 +1921,7 @@ bool Connection_based_routing_resources::sanity_check_lookup() const {
         for (auto mapping : net_node_to_pin) {
             auto sanity = net_node_to_pin.find(mapping.first);
             if (sanity == net_node_to_pin.end()) {
-                vtr::printf_info("%d cannot find itself (net %lu)\n", mapping.first, size_t(net_id));
+                VTR_LOG("%d cannot find itself (net %lu)\n", mapping.first, size_t(net_id));
                 return false;
             }
             VTR_ASSERT(route_ctx.net_rr_terminals[net_id][mapping.second] == mapping.first);
@@ -2021,28 +2070,30 @@ static WirelengthInfo calculate_wirelength_info() {
 }
 
 static void print_route_status_header() {
-    vtr::printf("---- ------ ------- ------- ------- ------- ----------------- --------------- -------- ---------- ---------- ---------- ---------- --------\n");
-    vtr::printf("Iter   Time    Heap    Heap  Re-Rtd  Re-Rtd Overused RR Nodes      Wirelength      CPD       sTNS       sWNS       hTNS       hWNS Est Succ\n");
-    vtr::printf("      (sec)    push     pop    Nets   Conns                                       (ns)       (ns)       (ns)       (ns)       (ns)     Iter\n");
-    vtr::printf("---- ------ ------- ------- ------- ------- ----------------- --------------- -------- ---------- ---------- ---------- ---------- --------\n");
+    VTR_LOG("---- ------ ---- ------- ------- ------- ----------------- --------------- -------- ---------- ---------- ---------- ---------- --------\n");
+    VTR_LOG("Iter   Time  BBs    Heap  Re-Rtd  Re-Rtd Overused RR Nodes      Wirelength      CPD       sTNS       sWNS       hTNS       hWNS Est Succ\n");
+    VTR_LOG("      (sec) Updt    push    Nets   Conns                                       (ns)       (ns)       (ns)       (ns)       (ns)     Iter\n");
+    VTR_LOG("---- ------ ---- ------- ------- ------- ----------------- --------------- -------- ---------- ---------- ---------- ---------- --------\n");
 }
 
-static void print_route_status(int itry, double elapsed_sec, const RouterStats& router_stats,
+static void print_route_status(int itry, double elapsed_sec, int num_bb_updated, const RouterStats& router_stats,
         const OveruseInfo& overuse_info, const WirelengthInfo& wirelength_info,
         std::shared_ptr<const SetupHoldTimingInfo> timing_info,
         float est_success_iteration) {
 
     //Iteration
-    vtr::printf("%4d", itry);
+    VTR_LOG("%4d", itry);
 
     //Elapsed Time
-    vtr::printf(" %6.1f", elapsed_sec);
+    VTR_LOG(" %6.1f", elapsed_sec);
+
+    //Number of bounding boxes updated
+    VTR_LOG(" %4d", num_bb_updated);
 
     //Heap push/pop
     constexpr int HEAP_OP_DIGITS = 7;
     constexpr int HEAP_OP_SCI_PRECISION = 2;
     pretty_print_uint(" ", router_stats.heap_pushes, HEAP_OP_DIGITS, HEAP_OP_SCI_PRECISION);
-    pretty_print_uint(" ", router_stats.heap_pops, HEAP_OP_DIGITS, HEAP_OP_SCI_PRECISION);
     VTR_ASSERT(router_stats.heap_pops <= router_stats.heap_pushes);
 
     //Rerouted nets
@@ -2059,62 +2110,62 @@ static void print_route_status(int itry, double elapsed_sec, const RouterStats& 
     constexpr int OVERUSE_DIGITS = 7;
     constexpr int OVERUSE_SCI_PRECISION = 2;
     pretty_print_uint(" ", overuse_info.overused_nodes(), OVERUSE_DIGITS, OVERUSE_SCI_PRECISION);
-    vtr::printf(" (%6.3f%)", overuse_info.overused_node_ratio()*100);
+    VTR_LOG(" (%6.3f%)", overuse_info.overused_node_ratio()*100);
 
     //Wirelength
     constexpr int WL_DIGITS = 7;
     constexpr int WL_SCI_PRECISION = 2;
     pretty_print_uint(" ", wirelength_info.used_wirelength(), WL_DIGITS, WL_SCI_PRECISION);
-    vtr::printf(" (%4.1f%)", wirelength_info.used_wirelength_ratio()*100);
+    VTR_LOG(" (%4.1f%)", wirelength_info.used_wirelength_ratio()*100);
 
     //CPD
     if (timing_info) {
         float cpd = timing_info->least_slack_critical_path().delay();
-        vtr::printf(" %#8.3f", 1e9 * cpd);
+        VTR_LOG(" %#8.3f", 1e9 * cpd);
     } else {
-        vtr::printf(" %8s", "N/A");
+        VTR_LOG(" %8s", "N/A");
     }
 
     //sTNS
     if (timing_info) {
         float sTNS = timing_info->setup_total_negative_slack();
-        vtr::printf(" % #10.4g", 1e9 * sTNS);
+        VTR_LOG(" % #10.4g", 1e9 * sTNS);
     } else {
-        vtr::printf(" %10s", "N/A");
+        VTR_LOG(" %10s", "N/A");
     }
 
     //sWNS
     if (timing_info) {
         float sWNS = timing_info->setup_worst_negative_slack();
-        vtr::printf(" % #10.3f", 1e9 * sWNS);
+        VTR_LOG(" % #10.3f", 1e9 * sWNS);
     } else {
-        vtr::printf(" %10s", "N/A");
+        VTR_LOG(" %10s", "N/A");
     }
 
     //hTNS
     if (timing_info) {
         float hTNS = timing_info->hold_total_negative_slack();
-        vtr::printf(" % #10.4g", 1e9 * hTNS);
+        VTR_LOG(" % #10.4g", 1e9 * hTNS);
     } else {
-        vtr::printf(" %10s", "N/A");
+        VTR_LOG(" %10s", "N/A");
     }
 
     //hWNS
     if (timing_info) {
         float hWNS = timing_info->hold_worst_negative_slack();
-        vtr::printf(" % #10.3f", 1e9 * hWNS);
+        VTR_LOG(" % #10.3f", 1e9 * hWNS);
     } else {
-        vtr::printf(" %10s", "N/A");
+        VTR_LOG(" %10s", "N/A");
     }
 
     //Estimated success iteration
     if (std::isnan(est_success_iteration)) {
-        vtr::printf(" %8s", "N/A");
+        VTR_LOG(" %8s", "N/A");
     } else {
-        vtr::printf(" %8.0f", est_success_iteration);
+        VTR_LOG(" %8.0f", est_success_iteration);
     }
 
-    vtr::printf("\n");
+    VTR_LOG("\n");
 
     fflush(stdout);
 }
@@ -2123,10 +2174,10 @@ static void pretty_print_uint(const char* prefix, size_t value, int num_digits, 
     //Print as integer if it will fit in the width, other wise scientific
     if (value <= std::pow(10, num_digits) - 1) {
         //Direct
-        vtr::printf("%s%*zu", prefix, num_digits, value);
+        VTR_LOG("%s%*zu", prefix, num_digits, value);
     } else {
         //Scientific
-        vtr::printf("%s%#*.*g", prefix, num_digits, scientific_precision, float(value));
+        VTR_LOG("%s%#*.*g", prefix, num_digits, scientific_precision, float(value));
     }
 }
 
@@ -2137,4 +2188,151 @@ static std::string describe_unrouteable_connection(const int source_node, const 
                                       rr_node_arch_name(sink_node).c_str(), describe_rr_node(sink_node).c_str());
 
     return msg;
+}
+
+//Returns true if the specified net fanout is classified as high fanout
+static bool is_high_fanout(int fanout) {
+    return (fanout >= HIGH_FANOUT_NET_LIM);
+}
+
+//In heavily congested designs a static bounding box (BB) can 
+//become problematic for routability (it effectively enforces a 
+//hard blockage restricting where a net can route).
+//
+//For instance, the router will try to route non-critical connections 
+//away from congested regions, but may end up hitting the edge of the
+//bounding box. Limiting how far out-of-the-way it can be routed, and
+//preventing congestion from resolving.
+//
+//To alleviate this, we dynamically expand net bounding boxes if the net's
+//*current* routing uses RR nodes 'close' to the edge of it's bounding box.
+//
+//The result is that connections trying to move out of the way and hitting
+//their BB will have their bounding boxes will expand slowly in that direction.
+//This helps spread out regions of heavy congestion (over several routing
+//iterations).
+//
+//By growing the BBs slowly and only as needed we minimize the size of the BBs.
+//This helps keep the router's graph search fast.
+//
+//Typically, only a small minority of nets (typically > 10%) have their BBs updated
+//each routing iteration.
+static size_t dynamic_update_bounding_boxes() {
+    auto& device_ctx = g_vpr_ctx.device();
+    auto& cluster_ctx = g_vpr_ctx.clustering();
+    auto& route_ctx = g_vpr_ctx.mutable_routing();
+
+    auto& clb_nlist = cluster_ctx.clb_nlist;
+    auto& grid = device_ctx.grid;
+
+    //Controls how close a net's routing needs to be to it's bounding box
+    //before the bounding box is expanded.
+    //
+    //A value of zero indicates that the routing needs to be at the bounding box
+    //edge
+    constexpr int DYNAMIC_BB_DELTA_THRESHOLD = 0;
+
+    //Walk through each net, calculating the bounding box of its current routing, 
+    //and then increase the router's bounding box if the two are close together
+
+    int grid_xmax = grid.width() - 1;
+    int grid_ymax = grid.height() - 1;
+
+    size_t num_bb_updated = 0;
+
+    for (ClusterNetId net : clb_nlist.nets()) {
+        t_trace* routing_head = route_ctx.trace_head[net];
+
+        if (routing_head == nullptr) continue; //Skip if no routing
+
+        //We do not adjust the boundig boxes of high fanout nets, since they
+        //use different bounding boxes based on the target location.
+        //
+        //This ensures that the delta values calculated below are always non-negative
+        if (is_high_fanout(clb_nlist.net_sinks(net).size())) continue;
+
+        t_bb curr_bb = calc_current_bb(routing_head);
+
+        t_bb& router_bb = route_ctx.route_bb[net];
+
+        //Calculate the distances between the net's used RR nodes and
+        //the router's bounding box
+        int delta_xmin = curr_bb.xmin - router_bb.xmin;
+        int delta_xmax = router_bb.xmax - curr_bb.xmax;
+        int delta_ymin = curr_bb.ymin - router_bb.ymin;
+        int delta_ymax = router_bb.ymax - curr_bb.ymax;
+
+        //Note that if the net uses non-configurable switches it's routing
+        //may end-up outside the bounding boxes, so the delta values may be
+        //negative. The code below will expand the bounding box in those
+        //cases.
+
+        //Expand each dimension by one if within DYNAMIC_BB_DELTA_THRESHOLD threshold
+        bool updated_bb = false;
+        if (delta_xmin <= DYNAMIC_BB_DELTA_THRESHOLD && router_bb.xmin > 0) {
+            --router_bb.xmin;
+            updated_bb = true;
+        }
+
+        if (delta_ymin <= DYNAMIC_BB_DELTA_THRESHOLD && router_bb.ymin > 0) {
+            --router_bb.ymin;
+            updated_bb = true;
+        }
+
+        if (delta_xmax <= DYNAMIC_BB_DELTA_THRESHOLD && router_bb.xmax < grid_xmax) {
+            ++router_bb.xmax;
+            updated_bb = true;
+        }
+
+        if (delta_ymax <= DYNAMIC_BB_DELTA_THRESHOLD && router_bb.ymax < grid_ymax) {
+            ++router_bb.ymax;
+            updated_bb = true;
+        }
+
+        if (updated_bb) {
+            ++num_bb_updated;
+            //VTR_LOG("Expanded net %6zu router BB to (%d,%d)x(%d,%d) based on net RR node BB (%d,%d)x(%d,%d)\n", size_t(net),
+                        //router_bb.xmin, router_bb.ymin, router_bb.xmax, router_bb.ymax,
+                        //curr_bb.xmin, curr_bb.ymin, curr_bb.xmax, curr_bb.ymax);
+        }
+    }
+    return num_bb_updated;
+}
+
+//Returns the bounding box of a net's used routing resources
+static t_bb calc_current_bb(const t_trace* head) {
+    auto& device_ctx = g_vpr_ctx.device();
+    auto& grid = device_ctx.grid;
+
+    t_bb bb;
+    bb.xmin = grid.width() - 1;
+    bb.ymin = grid.height() - 1;
+    bb.xmax = 0;
+    bb.ymax = 0;
+
+    
+    for (const t_trace* elem = head; elem != nullptr; elem = elem->next) {
+        const t_rr_node& node = device_ctx.rr_nodes[elem->index];
+        //The router interprets RR nodes which cross the boundary as being
+        //'within' of the BB. Only thos which are *strictly* out side the
+        //box are exluded, hence we use the nodes xhigh/yhigh for xmin/xmax,
+        //and xlow/ylow for xmax/ymax calculations
+        bb.xmin = std::min<int>(bb.xmin, node.xhigh());
+        bb.ymin = std::min<int>(bb.ymin, node.yhigh());
+        bb.xmax = std::max<int>(bb.xmax, node.xlow());
+        bb.ymax = std::max<int>(bb.ymax, node.ylow());
+    }
+
+    VTR_ASSERT(bb.xmin <= bb.xmax);
+    VTR_ASSERT(bb.ymin <= bb.ymax);
+
+    return bb;
+}
+
+static void enable_router_debug(const t_router_opts& router_opts, ClusterNetId net) {
+    f_router_debug = (router_opts.router_debug_net == -1 || net == ClusterNetId(router_opts.router_debug_net));
+
+#ifndef VTR_ENABLE_DEBUG_LOGGING
+    if (f_router_debug) VPR_THROW(VPR_ERROR_ROUTE, "Can not enable router debug logging since VPR was compiled without debug logging enabled");
+#endif
 }
