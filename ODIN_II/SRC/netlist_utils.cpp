@@ -497,21 +497,31 @@ void remap_pin_to_new_node_range(npin_t *pin, nnode_t *new_node, int pin_range_s
 	if (pin->type == INPUT)
     {
 		/* clean out the entry in the old net */
-		pin->node->input_pins[pin->pin_node_idx] = NULL;
 		/* do the new additions */
 		for(int i = pin_range_start; i>=pin_range_end; i--)
 		{
-			add_input_pin_to_node(new_node, pin, i);
+			npin_t* in_pin = pin;
+			if(i != pin_range_end)
+				in_pin = copy_input_npin(pin);
+			else
+				in_pin->node->input_pins[in_pin->pin_node_idx] = NULL;
+			oassert(in_pin != NULL);
+			add_input_pin_to_node(new_node, in_pin, i);
 		}
 	}
 	else if (pin->type == OUTPUT)
     {
 		/* clean out the entry in the old net */
-		pin->node->output_pins[pin->pin_node_idx] = NULL;
 		/* do the new additions */
 		for(int i = pin_range_start; i>=pin_range_end; i--)
 		{
-			add_output_pin_to_node(new_node, pin, i);
+			npin_t* out_pin = pin;
+			if(i != pin_range_end)
+				out_pin = copy_output_npin(pin);
+			else
+				out_pin->node->output_pins[out_pin->pin_node_idx] = NULL;
+			oassert(out_pin != NULL);
+			add_output_pin_to_node(new_node, out_pin, i);
 		}
 	}
 }

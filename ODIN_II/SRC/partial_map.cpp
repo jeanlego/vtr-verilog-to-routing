@@ -246,6 +246,9 @@ void partial_map_node(nnode_t *node, short traverse_number, netlist_t *netlist)
 		case SR:
 			instantiate_shift_left_or_right(node, node->type, traverse_number, netlist);
 			break;
+        case ASR:
+            instantiate_arithmatic_shift_right(node, traverse_number, netlist);
+            break;
 		case MULTI_PORT_MUX:
 			instantiate_multi_port_mux(node, traverse_number, netlist);
 			break;
@@ -1088,7 +1091,6 @@ void instantiate_arithmatic_shift_right(nnode_t *node, short mark, netlist_t *ne
 	}
 
 	buf_node = make_1port_gate(BUF_NODE, width, width, node, mark);
-
 	/* connect inputs to outputs */
 	for(i = width - 2; i >= shift_size; i--)
 	{
