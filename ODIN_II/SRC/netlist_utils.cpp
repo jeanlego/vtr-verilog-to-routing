@@ -473,17 +473,46 @@ void remap_pin_to_new_net(npin_t *pin, nnet_t *new_net)
  *-----------------------------------------------------------------------*/
 void remap_pin_to_new_node(npin_t *pin, nnode_t *new_node, int pin_idx)
 {
-	if (pin->type == INPUT) {
+	if (pin->type == INPUT)
+    {
 		/* clean out the entry in the old net */
 		pin->node->input_pins[pin->pin_node_idx] = NULL;
 		/* do the new addition */
 		add_input_pin_to_node(new_node, pin, pin_idx);
 	}
-	else if (pin->type == OUTPUT) {
+	else if (pin->type == OUTPUT)
+    {
 		/* clean out the entry in the old net */
 		pin->node->output_pins[pin->pin_node_idx] = NULL;
 		/* do the new addition */
 		add_output_pin_to_node(new_node, pin, pin_idx);
+	}
+}
+
+/*-------------------------------------------------------------------------
+ * (function: remap_pin_to_new_nodes)
+ *-----------------------------------------------------------------------*/
+void remap_pin_to_new_node_range(npin_t *pin, nnode_t *new_node, int pin_range_start, int pin_range_end)
+{
+	if (pin->type == INPUT)
+    {
+		/* clean out the entry in the old net */
+		pin->node->input_pins[pin->pin_node_idx] = NULL;
+		/* do the new additions */
+		for(int i = pin_range_start; i>=pin_range_end; i--)
+		{
+			add_input_pin_to_node(new_node, pin, i);
+		}
+	}
+	else if (pin->type == OUTPUT)
+    {
+		/* clean out the entry in the old net */
+		pin->node->output_pins[pin->pin_node_idx] = NULL;
+		/* do the new additions */
+		for(int i = pin_range_start; i>=pin_range_end; i--)
+		{
+			add_output_pin_to_node(new_node, pin, i);
+		}
 	}
 }
 

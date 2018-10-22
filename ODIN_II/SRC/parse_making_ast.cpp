@@ -2014,6 +2014,9 @@ void graphVizOutputAst_traverse_node(FILE *fp, ast_node_t *node, ast_node_t *fro
 					case SR:
 						fprintf(fp, "\t%d [label=\"BINARY_OPERATION SR\"];\n", my_label);
 						break;
+					case ASR:
+						fprintf(fp, "\t%d [label=\"BINARY_OPERATION ASR\"];\n", my_label);
+						break;
 					case SL:
 						fprintf(fp, "\t%d [label=\"BINARY_OPERATION SL\"];\n", my_label);
 						break;

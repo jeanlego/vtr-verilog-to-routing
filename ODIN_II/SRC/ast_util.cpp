@@ -1205,6 +1205,11 @@ ast_node_t * fold_binary(ast_node_t *child_0 ,ast_node_t *child_1, operation_lis
 				success = TRUE;
 				break;
 
+			case ASR:
+				result = operand_0 >> operand_1;
+				success = TRUE;
+				break;
+
 			case LOGICAL_AND:
 				result = operand_0 && operand_1;
 				success = TRUE;

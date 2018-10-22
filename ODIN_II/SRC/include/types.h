@@ -257,6 +257,7 @@ typedef enum
 	LTE, // <=
 	GTE, // >=
 	SR, // >>
+	ASR, // >>>
 	SL, // <<
 	CASE_EQUAL, // ===
 	CASE_NOT_EQUAL, // !==

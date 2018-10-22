@@ -179,7 +179,7 @@ char* standardize_number(const char* input);
 <INITIAL>"&&&"				{ MP; return vNOT_SUPPORT;}
 <INITIAL>"+:"				{ MP; return vNOT_SUPPORT;}
 <INITIAL>"-:"				{ MP; return vNOT_SUPPORT;}
-<INITIAL>">>>"				{ MP; return vNOT_SUPPORT;}
+<INITIAL>">>>"				{ MP; return voASRIGHT;}
 
 
 	/*	operands	*/
