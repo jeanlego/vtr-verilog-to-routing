@@ -12,8 +12,8 @@ output [15:0] c;
 always @ ( posedge clk )
 begin
     case(rst)
-        0: c = a >>> 1;
+        0: c = a >>> 7;
         1: c = 0;
     endcase
 end
-
+endmodule
