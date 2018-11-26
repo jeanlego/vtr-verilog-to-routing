@@ -1060,7 +1060,7 @@ ast_node_t *newWhile(ast_node_t *compare_expression, ast_node_t *statement, int 
 	/* allocate child nodes to this node */
 	allocate_children_to_node(new_node, 2, compare_expression, statement);
 
-	/* This needs to be removed once elaboration support is added */
+	/* This needs to be removed once support is added */
 	printf("While statement is NOT supported: line %d\n", line_number);
 	oassert(0);
 

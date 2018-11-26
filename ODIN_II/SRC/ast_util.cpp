@@ -1026,9 +1026,12 @@ ast_node_t *ast_node_deep_copy(ast_node_t *node){
 	node_copy->types.number.number = vtr::strdup(node->types.number.number);
 	node_copy->types.number.binary_string = vtr::strdup(node->types.number.binary_string);
 
+    //Create a new child list
+    node_copy->children = vtr::malloc(sizeof(ast_node_t*)*node_copy->num_children);
+
 	//Recursively copy its children
 	for(i = 0; i < node->num_children; i++){
-		node_copy->children[i] = ast_node_deep_copy(node_copy->children[i]);
+		node_copy->children[i] = ast_node_deep_copy(node->children[i]);
 	}
 
 	return node_copy;
