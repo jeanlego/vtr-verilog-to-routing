@@ -5,6 +5,8 @@ module simple_op(in1,in2,in3,out);
     input  in3;
     output out;
 
+    $display("Expect:: ELSIF this test is expected to pass, if it fails the `elsif are not functioning properly.\n");
+
     `define first
     `define second
 
