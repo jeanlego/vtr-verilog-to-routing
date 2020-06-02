@@ -1,5 +1,5 @@
-`define START 2;
-`define END 0;
+`define START 2
+`define END 0
 `define RANGE [`START:`END]
 
 module simple_op(in,out);

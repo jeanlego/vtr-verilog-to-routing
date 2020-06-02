@@ -1,4 +1,4 @@
-`define WIDTH 2;
+`define WIDTH 2
 `define RANGE [`WIDTH:0]
 
 module simple_op(in,out);
