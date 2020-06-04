@@ -1344,19 +1344,16 @@ void c_simple_print(std::string str) {
         size_t next_char = format_char_index;
         printf("%s", str.substr(start, format_char_index).c_str());
         // print the string
-        if (format_char_index != std::string::npos) {
-            // try and see if its an octal number
-            char buffer[4] = {
-                str[format_char_index + 1],
-                str[format_char_index + 2],
-                str[format_char_index + 3],
-                0};
-            next_char = format_char_index + 4;
-            char* endptr = NULL;
-            char octal_value = (char)strtoul(buffer, &endptr, 8);
-            if (endptr == &buffer[3]) {
-                // if it is an octal number print the octal char
-                printf("%c", octal_value);
+        if (format_char_index + 1 < str.size()) {
+            // is it an octal number
+            if (strspn(str.substr(format_char_index + 1).c_str(), "01234567") >= 3) {
+                char buffer[4] = {
+                    str[format_char_index + 1],
+                    str[format_char_index + 2],
+                    str[format_char_index + 3],
+                    0};
+                next_char = format_char_index + 4;
+                printf("%c", strtoul(buffer, NULL, 8));
             } else {
                 next_char = format_char_index + 2;
                 switch (str[format_char_index + 1]) {
