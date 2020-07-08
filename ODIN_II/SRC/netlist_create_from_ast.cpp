@@ -50,8 +50,8 @@
 
 /* NAMING CONVENTIONS
  * {previous_string}.instance_name
- * {previous_string}.instance_name^signal_name
- * {previous_string}.instance_name^signal_name~bit
+ * {previous_string}.instance_name.signal_name
+ * {previous_string}.instance_name.signal_name[bit]
  */
 
 #define INSTANTIATE_DRIVERS 1

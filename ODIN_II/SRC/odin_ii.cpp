@@ -540,9 +540,9 @@ void get_options(int argc, char** argv) {
     other_sim_grp.add_argument(global_args.sim_additional_pins, "-p")
         .help(
             "list of additional pins/nodes to monitor during simulation.\n"
-            "Eg: \"-p input~0 input~1\" monitors pin 0 and 1 of input, \n"
+            "Eg: \"-p input[0] input[1]\" monitors pin 0 and 1 of input, \n"
             "  or \"-p input\" monitors all pins of input as a single port. \n"
-            "  or \"-p input~\" monitors all pins of input as separate ports. (split) \n"
+            "  or \"-p input[]\" monitors all pins of input as separate ports. (split) \n"
             "- Note: Non-existent pins are ignored. \n"
             "- Matching is done via strstr so general strings will match \n"
             "  all similar pins and nodes.\n"

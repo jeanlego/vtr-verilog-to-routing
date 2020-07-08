@@ -482,7 +482,7 @@ void split_adder_for_sub(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int
         connect_nodes(netlist->vcc_node, 0, node[0], sizea);
         //hang the first sumout
         node[0]->output_pins[1] = allocate_npin();
-        node[0]->output_pins[1]->name = append_string("", "%s~dummy_output~%d~%d", node[0]->name, 0, 1);
+        node[0]->output_pins[1]->name = vtr::strdup("unconn");
     }
 
     // connect the first cin pin to vcc or unconn depending on configuration
@@ -516,7 +516,7 @@ void split_adder_for_sub(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int
             else {
                 node[0]->output_pins[j + 1] = allocate_npin();
                 // Pad outputs with a unique and descriptive name to avoid collisions.
-                node[0]->output_pins[j + 1]->name = append_string("", "%s~dummy_output~%d~%d", node[0]->name, 0, j + 1);
+                node[0]->output_pins[j + 1]->name = vtr::strdup("unconn");
             }
         }
     } else {
@@ -526,7 +526,7 @@ void split_adder_for_sub(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int
             else {
                 node[0]->output_pins[j + 2] = allocate_npin();
                 // Pad outputs with a unique and descriptive name to avoid collisions.
-                node[0]->output_pins[j + 2]->name = append_string("", "%s~dummy_output~%d~%d", node[0]->name, 0, j + 2);
+                node[0]->output_pins[j + 2]->name = vtr::strdup("unconn");
             }
         }
     }
@@ -540,14 +540,14 @@ void split_adder_for_sub(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int
                 else {
                     node[i]->output_pins[j + 1] = allocate_npin();
                     // Pad outputs with a unique and descriptive name to avoid collisions.
-                    node[i]->output_pins[j + 1]->name = append_string("", "%s~dummy_output~%d~%d", node[i]->name, i, j + 2);
+                    node[i]->output_pins[j + 1]->name = vtr::strdup("unconn");
                 }
             }
         }
     }
     node[count - 1]->output_pins[0] = allocate_npin();
     // Pad outputs with a unique and descriptive name to avoid collisions.
-    node[count - 1]->output_pins[0]->name = append_string("", "%s~dummy_output~%d~%d", node[(count - 1)]->name, (count - 1), 0);
+    node[count - 1]->output_pins[0]->name = vtr::strdup("unconn");
     //connect_nodes(node[count - 1], (node[(count - 1)]->num_output_pins - 1), netlist->gnd_node, 0);
     //}
 

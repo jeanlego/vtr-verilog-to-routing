@@ -2818,7 +2818,7 @@ static void add_additional_items_to_lines(nnode_t* node, lines_t* l) {
         }
 
         // Search the node name for each user defined item.
-        if (!add && node->name && strlen(node->name) && strchr(node->name, '^')) {
+        if (!add && node->name && strlen(node->name) && strchr(node->name, '.')) {
             for (k = 0; k < p.size(); k++) {
                 if (strstr(node->name, p[k].c_str())) {
                     add = true;
@@ -2828,9 +2828,9 @@ static void add_additional_items_to_lines(nnode_t* node, lines_t* l) {
         }
 
         if (add) {
-            int single_pin = strchr(p[k].c_str(), '~') ? 1 : 0;
+            int single_pin = strchr(p[k].c_str(), '.') ? 1 : 0;
 
-            if (strchr(node->name, '^')) {
+            if (strchr(node->name, '.')) {
                 char* port_name;
                 if (single_pin)
                     port_name = get_pin_name(node->name);

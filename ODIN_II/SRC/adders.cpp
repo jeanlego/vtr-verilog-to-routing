@@ -679,7 +679,7 @@ void split_adder(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int cin, in
         connect_nodes(netlist->gnd_node, 0, node[0], sizea);
         //hang the first sumout
         node[0]->output_pins[1] = allocate_npin();
-        node[0]->output_pins[1]->name = append_string("", "%s~dummy_output~%d~%d", node[0]->name, 0, 1);
+        node[0]->output_pins[1]->name = vtr::strdup("unconn");
     }
 
     if (nodeo->num_input_port_sizes == 2) {
@@ -723,11 +723,11 @@ void split_adder(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int cin, in
                     remap_pin_to_new_node(nodeo->output_pins[j], node[0], j + 2);
                 else {
                     node[0]->output_pins[j + 2] = allocate_npin();
-                    node[0]->output_pins[j + 2]->name = append_string("", "%s~dummy_output~%d~%d", node[0]->name, 0, j + 2);
+                    node[0]->output_pins[j + 2]->name = vtr::strdup("unconn");
                 }
                 //hang the first cout
                 node[0]->output_pins[0] = allocate_npin();
-                node[0]->output_pins[0]->name = append_string("", "%s~dummy_output~%d~%d", node[0]->name, 0, 0);
+                node[0]->output_pins[0]->name = vtr::strdup("unconn");
             }
         } else {
             for (j = 0; j < node[0]->num_output_pins - 1; j++)
@@ -751,14 +751,12 @@ void split_adder(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int cin, in
                     remap_pin_to_new_node(nodeo->output_pins[(count - 1) * sizea + j - offset], node[count - 1], j + 1);
                 else {
                     node[count - 1]->output_pins[j + 1] = allocate_npin();
-                    // Pad outputs with a unique and descriptive name to avoid collisions.
-                    node[count - 1]->output_pins[j + 1]->name = append_string("", "%s~dummy_output~%d~%d", node[count - 1]->name, count - 1, j + 1);
+                    node[count - 1]->output_pins[j + 1]->name = vtr::strdup("unconn");
                 }
             }
             //Hang the last cout
             node[count - 1]->output_pins[0] = allocate_npin();
-            // Pad outputs with a unique and descriptive name to avoid collisions.
-            node[count - 1]->output_pins[0]->name = append_string("", "%s~dummy_output~%d~%d", node[count - 1]->name, count - 1, 0);
+            node[count - 1]->output_pins[0]->name = vtr::strdup("unconn");
         } else {
             for (j = 0; j < node[count - 1]->num_output_pins - 1; j++)
                 //if(((count - 1) * sizea + j - 1) < nodeo->num_output_pins)
@@ -767,8 +765,7 @@ void split_adder(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int cin, in
                 remap_pin_to_new_node(nodeo->output_pins[nodeo->num_output_pins - 1], node[count - 1], 0);
             else {
                 node[count - 1]->output_pins[0] = allocate_npin();
-                // Pad outputs with a unique and descriptive name to avoid collisions.
-                node[count - 1]->output_pins[0]->name = append_string("", "%s~dummy_output~%d~%d", node[count - 1]->name, count - 1, 0);
+                node[count - 1]->output_pins[0]->name = vtr::strdup("unconn");
             }
         }
     }
@@ -1157,7 +1154,8 @@ static void connect_output_pin_to_node(int* width, int current_pin, int output_p
             remap_pin_to_new_node(node_pin_select, current_adder, output_pin_id);
         } else {
             current_adder->output_pins[output_pin_id] = allocate_npin();
-            current_adder->output_pins[output_pin_id]->name = append_string("", "%s~dummy_output~%d", current_adder->name, output_pin_id);
+            current_adder->output_pins[output_pin_id]->name = vtr::strdup("unconn");
+            ;
         }
     }
 }

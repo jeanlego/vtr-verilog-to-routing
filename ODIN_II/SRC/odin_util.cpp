@@ -147,43 +147,55 @@ const char* ast_node_name_based_on_ids(ast_node_t* node) {
 
 /*--------------------------------------------------------------------------
  * (function: make_signal_name)
- * // return signal_name-bit
+ * // return signal_name[bit]
  *------------------------------------------------------------------------*/
 char* make_signal_name(char* signal_name, int bit) {
-    oassert(signal_name);
-    std::stringstream return_string;
-    return_string << signal_name;
-    if (bit != -1)
-        return_string << "-" << std::dec << bit;
+    std::string return_string = "";
 
-    return vtr::strdup(return_string.str().c_str());
+    if (signal_name) {
+        if (return_string != "") {
+            return_string += ".";
+        }
+        return_string += signal_name;
+
+        if (bit != -1) {
+            return_string += std::string("[") + std::to_string(bit) + "]";
+        }
+    }
+
+    return vtr::strdup(return_string.c_str());
 }
 
 /*---------------------------------------------------------------------------------------------
  * (function: make_full_ref_name)
  * // {previous_string}.instance_name
- * // {previous_string}.instance_name^signal_name
- * // {previous_string}.instance_name^signal_name~bit
+ * // {previous_string}.instance_name.signal_name
+ * // {previous_string}.instance_name.signal_name[bit]
  *-------------------------------------------------------------------------------------------*/
 char* make_full_ref_name(const char* previous, const char* /*module_name*/, const char* module_instance_name, const char* signal_name, long bit) {
-    std::stringstream return_string;
+    std::string return_string;
     if (previous)
-        return_string << previous;
+        return_string += previous;
 
-    if (module_instance_name)
-        return_string << "." << module_instance_name;
-
-    if (signal_name && (previous || module_instance_name))
-        return_string << "^";
-
-    if (signal_name)
-        return_string << signal_name;
-
-    if (bit != -1) {
-        oassert(signal_name);
-        return_string << "~" << std::dec << bit;
+    if (module_instance_name) {
+        if (return_string.size() == 0) {
+            return_string += ".";
+        }
+        return_string += module_instance_name;
     }
-    return vtr::strdup(return_string.str().c_str());
+
+    if (signal_name) {
+        if (return_string != "") {
+            return_string += ".";
+        }
+        return_string += signal_name;
+
+        if (bit != -1) {
+            return_string += std::string("[") + std::to_string(bit) + "]";
+        }
+    }
+
+    return vtr::strdup(return_string.c_str());
 }
 
 /*---------------------------------------------------------------------------------------------
@@ -555,50 +567,52 @@ int is_binary_string(char* string) {
 }
 
 /*
- * Gets the port name (everything after the ^ character)
+ * Gets the port name (everything after the last . character)
  * from the given name. Leaves the original name intact.
  * Returns a copy of the original name if there is no
- * ^ character present in the name.
+ * . character present in the name.
  */
-char* get_pin_name(char* name) { // Remove everything before the ^
-    if (strchr(name, '^'))
-        return vtr::strdup(strchr(name, '^') + 1);
-    else
-        return vtr::strdup(name);
+char* get_pin_name(char* name) { // Remove everything before the last name (the port)
+    char* tmp = name;
+    while (tmp = strchr(name, '.')) {
+        name = tmp + 1;
+    }
+    return vtr::strdup(name);
 }
 
 /*
- * Gets the port name (everything after the ^ and before the ~)
+ * Gets the port name (everything after the last . and before the [)
  * from the given name.
  */
 char* get_port_name(char* name) {
-    // Remove everything before the ^
+    // Remove everything before the .
     char* port_name = get_pin_name(name);
-    // Find out if there is a ~ and remove everything after it.
-    char* tilde = strchr(port_name, '~');
-    if (tilde)
-        *tilde = '\0';
+    // Find out if there is a [ and remove everything after it.
+    char* bracket = strchr(port_name, '[');
+    if (bracket)
+        *bracket = '\0';
     return port_name;
 }
 
 /*
- * Gets the pin number (the number after the ~)
+ * Gets the pin number (the number after the [)
  * from the given name.
  *
- * Returns -1 if there is no ~.
+ * Returns -1 if there is no [.
  */
 int get_pin_number(char* name) {
-    // Grab the portion of the name ater the ^
-    char* pin_name = get_pin_name(name);
-    char* tilde = strchr(pin_name, '~');
-    // The pin number is everything after the ~
-    int pin_number;
-    if (tilde)
-        pin_number = strtol(tilde + 1, NULL, 10);
-    else
-        pin_number = -1;
+    // Grab the portion of the name ater the last .
+    char* port_name = get_pin_name(name);
 
-    vtr::free(pin_name);
+    char* start = NULL;
+    if (port_name)
+        start = strchr(port_name, '[');
+
+    // The pin number is everything between the [ ]
+    int pin_number = -1;
+    if (start)
+        pin_number = strtol(start + 1, NULL, 10);
+    vtr::free(port_name);
     return pin_number;
 }
 
