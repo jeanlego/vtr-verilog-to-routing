@@ -41,82 +41,67 @@
 #include "vtr_util.h"
 #include "vtr_memory.h"
 
-bool haveOutputLatchBlackbox = false;
-
 void depth_first_traversal_to_output(short marker_value, FILE* fp, netlist_t* netlist);
-void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, FILE* fp);
-void output_node(nnode_t* node, short traverse_number, FILE* fp);
-void define_logical_function(nnode_t* node, FILE* out);
-void define_set_input_logical_function(nnode_t* node, const char* bit_output, FILE* out);
-void define_ff(nnode_t* node, FILE* out);
-void define_decoded_mux(nnode_t* node, FILE* out);
-void output_blif_pin_connect(nnode_t* node, FILE* out);
+void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, FILE* fp, netlist_t* netlist);
+void output_node(nnode_t* node, short traverse_number, FILE* fp, netlist_t* netlist);
+void define_logical_function(nnode_t* node, FILE* out, netlist_t* netlist);
+void define_set_input_logical_function(nnode_t* node, const char* bit_output, FILE* out, netlist_t* netlist);
+void define_ff(nnode_t* node, FILE* out, netlist_t* netlist);
+void define_decoded_mux(nnode_t* node, FILE* out, netlist_t* netlist);
+void output_blif_pin_connect(nnode_t* node, FILE* out, netlist_t* netlist);
 
-static void print_input_pin(FILE* out, nnode_t* node, long pin_idx) {
+static void print_input_pin(FILE* out, nnode_t* node, long pin_idx, netlist_t* netlist) {
     oassert(pin_idx < node->num_input_pins);
+
     nnet_t* net = node->input_pins[pin_idx]->net;
-    if (!net->driver_pin || !net->driver_pin->node) {
+
+    /* cleanup bad drivers */
+    if (net->driver_pin && !net->driver_pin->node) {
+        net->driver_pin = free_npin(net->driver_pin);
+    }
+
+    // plug non existant driver to unconn
+    if (!net->driver_pin) {
+        add_driver_pin_to_net(net, get_unconn_pin(netlist));
         // Add a warning for an undriven net.
-        int line_number = node->related_ast_node ? node->related_ast_node->line_number : 0;
-        warning_message(NETLIST, line_number, -1,
+        int line_number = node->related_ast_node ? node->related_ast_node->line_number : -1;
+        int file_number = node->related_ast_node ? node->related_ast_node->file_number : -1;
+        warning_message(NETLIST, line_number, file_number,
                         "Net %s driving node %s is itself undriven.",
                         net->name, node->name);
+    }
 
-        fprintf(out, " %s", "unconn");
-    } else if (global_args.high_level_block.provenance() == argparse::Provenance::SPECIFIED
-               && net->driver_pin->node->related_ast_node != NULL) {
-        fprintf(out, " %s^^%i-%i",
-                net->driver_pin->node->name,
-                net->driver_pin->node->related_ast_node->far_tag,
-                net->driver_pin->node->related_ast_node->high_number);
+    if (net->driver_pin->name != NULL
+        && (net->driver_pin->node->type == MULTIPLY
+            || net->driver_pin->node->type == HARD_IP
+            || net->driver_pin->node->type == MEMORY
+            || net->driver_pin->node->type == ADD
+            || net->driver_pin->node->type == MINUS)) {
+        fprintf(out, " %s", net->driver_pin->name);
     } else {
-        if (net->driver_pin->name != NULL && ((net->driver_pin->node->type == MULTIPLY) || (net->driver_pin->node->type == HARD_IP) || (net->driver_pin->node->type == MEMORY) || (net->driver_pin->node->type == ADD) || (net->driver_pin->node->type == MINUS))) {
-            fprintf(out, " %s", net->driver_pin->name);
-        } else {
-            fprintf(out, " %s", net->driver_pin->node->name);
-        }
+        fprintf(out, " %s", net->driver_pin->node->name);
     }
 }
 
-static void print_output_pin(FILE* out, nnode_t* node) {
-    /* now print the output */
-    if (node->related_ast_node != NULL
-        && global_args.high_level_block.provenance() == argparse::Provenance::SPECIFIED)
-        fprintf(out, " %s^^%i-%i",
-                node->name,
-                node->related_ast_node->far_tag,
-                node->related_ast_node->high_number);
-    else
-        fprintf(out, " %s", node->name);
+static void print_output_pin(FILE* out, nnode_t* node, netlist_t* /* netlist */) {
+    fprintf(out, " %s", node->name);
 }
 
-static void print_input_pin_list(FILE* out, nnode_t* node) {
+static void print_input_pin_list(FILE* out, nnode_t* node, netlist_t* netlist) {
     for (long i = 0; i < node->num_input_pins; i++) {
-        print_input_pin(out, node, i);
+        print_input_pin(out, node, i, netlist);
     }
 }
 
-static void print_dot_names_header(FILE* out, nnode_t* node) {
+static void print_dot_names_header(FILE* out, nnode_t* node, netlist_t* netlist) {
     fprintf(out, ".names");
-    print_input_pin_list(out, node);
-
-    oassert(node->num_output_pins == 1);
-    print_output_pin(out, node);
+    print_input_pin_list(out, node, netlist);
+    print_output_pin(out, node, netlist);
     fprintf(out, "\n");
 }
 
 FILE* create_blif(const char* file_name) {
-    FILE* out = NULL;
-
-    /* open the file for output */
-    if (global_args.high_level_block.provenance() == argparse::Provenance::SPECIFIED) {
-        std::string out_file = "";
-        out_file = out_file + file_name + "_" + global_args.high_level_block.value() + ".blif";
-        out = fopen(out_file.c_str(), "w+");
-    } else {
-        out = fopen(file_name, "w+");
-    }
-
+    FILE* out = fopen(file_name, "w+");
     if (out == NULL) {
         error_message(NETLIST, -1, -1, "Could not open output file %s\n", file_name);
     }
@@ -134,29 +119,23 @@ void output_blif(FILE* out, netlist_t* netlist) {
 
     fprintf(out, ".inputs");
     for (long i = 0; i < netlist->num_top_input_nodes; i++) {
-        nnode_t* top_input_node = netlist->top_input_nodes[i];
-        print_output_pin(out, top_input_node);
+        print_output_pin(out, netlist->top_input_nodes[i], netlist);
     }
     fprintf(out, "\n");
 
     fprintf(out, ".outputs");
     for (long i = 0; i < netlist->num_top_output_nodes; i++) {
-        nnode_t* top_output_node = netlist->top_output_nodes[i];
-        if (top_output_node->input_pins[0]->net->driver_pin == NULL) {
-            warning_message(NETLIST,
-                            top_output_node->related_ast_node->line_number,
-                            top_output_node->related_ast_node->file_number,
-                            "This output is undriven (%s) and will be removed\n",
-                            top_output_node->name);
-        } else {
-            print_output_pin(out, top_output_node);
-        }
+        print_output_pin(out, netlist->top_output_nodes[i], netlist);
     }
     fprintf(out, "\n");
 
     /* add gnd, unconn, and vcc */
-    fprintf(out, "\n.names gnd\n.names unconn\n.names vcc\n1\n");
-    fprintf(out, "\n");
+    fprintf(out,
+            "\n"
+            ".names gnd\n"
+            "0\n"
+            ".names vcc\n"
+            "1\n");
 
     /* traverse the internals of the flat net-list */
     if (strcmp(configuration.output_type.c_str(), "blif") == 0) {
@@ -165,15 +144,13 @@ void output_blif(FILE* out, netlist_t* netlist) {
         error_message(NETLIST, 0, -1, "%s", "Invalid output file type.");
     }
 
-    /* connect all the outputs up to the last gate */
+    /* connect all the left over outputs up to the last gate */
     for (long i = 0; i < netlist->num_top_output_nodes; i++) {
         nnode_t* node = netlist->top_output_nodes[i];
-
         fprintf(out, ".names");
-        print_input_pin(out, node, 0);
-        print_output_pin(out, node);
+        print_input_pin(out, node, 0, netlist);
+        print_output_pin(out, node, netlist);
         fprintf(out, "\n");
-
         fprintf(out, "1 1\n\n");
     }
 
@@ -192,20 +169,15 @@ void output_blif(FILE* out, netlist_t* netlist) {
  * (function: depth_first_traversal_to_parital_map()
  *-------------------------------------------------------------------------------------------*/
 void depth_first_traversal_to_output(short marker_value, FILE* fp, netlist_t* netlist) {
-    int i;
-
-    netlist->gnd_node->name = vtr::strdup("gnd");
-    netlist->vcc_node->name = vtr::strdup("vcc");
-    netlist->pad_node->name = vtr::strdup("unconn");
-    /* now traverse the ground, vcc, and unconn pins */
-    depth_traverse_output_blif(netlist->gnd_node, marker_value, fp);
-    depth_traverse_output_blif(netlist->vcc_node, marker_value, fp);
-    depth_traverse_output_blif(netlist->pad_node, marker_value, fp);
+    /* now traverse the constant drivers */
+    for (BitSpace::bit_value_t driver = BitSpace::_start; driver <= BitSpace::_end; driver += 1) {
+        depth_traverse_output_blif(netlist->constant_nodes[driver], marker_value, fp, netlist);
+    }
 
     /* start with the primary input list */
-    for (i = 0; i < netlist->num_top_input_nodes; i++) {
+    for (int i = 0; i < netlist->num_top_input_nodes; i++) {
         if (netlist->top_input_nodes[i] != NULL) {
-            depth_traverse_output_blif(netlist->top_input_nodes[i], marker_value, fp);
+            depth_traverse_output_blif(netlist->top_input_nodes[i], marker_value, fp, netlist);
         }
     }
 }
@@ -213,7 +185,7 @@ void depth_first_traversal_to_output(short marker_value, FILE* fp, netlist_t* ne
 /*--------------------------------------------------------------------------
  * (function: depth_first_traverse)
  *------------------------------------------------------------------------*/
-void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, FILE* fp) {
+void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, FILE* fp, netlist_t* netlist) {
     int i, j;
     nnode_t* next_node;
     nnet_t* next_net;
@@ -224,7 +196,7 @@ void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, F
         /* ELSE - this is a new node so depth visit it */
 
         /* POST traverse  map the node since you might delete */
-        output_node(node, traverse_mark_number, fp);
+        output_node(node, traverse_mark_number, fp, netlist);
 
         /* mark that we have visitied this node now */
         node->traverse_visited = traverse_mark_number;
@@ -243,7 +215,7 @@ void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, F
                     continue;
 
                 /* recursive call point */
-                depth_traverse_output_blif(next_node, traverse_mark_number, fp);
+                depth_traverse_output_blif(next_node, traverse_mark_number, fp, netlist);
             }
         }
     }
@@ -252,29 +224,30 @@ void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, F
  * (function: output_node)
  * 	Depending on node type, figures out what to print for this node
  *------------------------------------------------------------------*/
-void output_node(nnode_t* node, short /*traverse_number*/, FILE* fp) {
+void output_node(nnode_t* node, short /*traverse_number*/, FILE* fp, netlist_t* netlist) {
     switch (node->type) {
         case GT:
-            define_set_input_logical_function(node, "100 1\n", fp);
+            define_set_input_logical_function(node, "100 1\n", fp, netlist);
             oassert(node->num_input_pins == 3);
             oassert(node->input_pins[2] != NULL);
             break;
         case LT:
-            define_set_input_logical_function(node, "010 1\n", fp); // last input decides if this
+            define_set_input_logical_function(node, "010 1\n", fp, netlist);
+            // last input decides if this
             oassert(node->num_input_pins == 3);
             oassert(node->input_pins[2] != NULL);
             break;
         case ADDER_FUNC:
-            define_set_input_logical_function(node, "001 1\n010 1\n100 1\n111 1\n", fp);
+            define_set_input_logical_function(node, "001 1\n010 1\n100 1\n111 1\n", fp, netlist);
             break;
         case CARRY_FUNC:
-            define_set_input_logical_function(node, "011 1\n101 1\n110 1\n111 1\n", fp);
+            define_set_input_logical_function(node, "011 1\n101 1\n110 1\n111 1\n", fp, netlist);
             break;
         case BITWISE_NOT:
-            define_set_input_logical_function(node, "0 1\n", fp);
+            define_set_input_logical_function(node, "0 1\n", fp, netlist);
             break;
         case BUF_NODE:
-            define_set_input_logical_function(node, "1 1\n", fp);
+            define_set_input_logical_function(node, "1 1\n", fp, netlist);
             break;
         case LOGICAL_AND:
         case LOGICAL_OR:
@@ -285,15 +258,15 @@ void output_node(nnode_t* node, short /*traverse_number*/, FILE* fp) {
         case LOGICAL_EQUAL:
         case NOT_EQUAL:
         case LOGICAL_NOT:
-            define_logical_function(node, fp);
+            define_logical_function(node, fp, netlist);
             break;
 
         case MUX_2:
-            define_decoded_mux(node, fp);
+            define_decoded_mux(node, fp, netlist);
             break;
 
         case FF_NODE:
-            define_ff(node, fp);
+            define_ff(node, fp, netlist);
             break;
 
         case MULTIPLY:
@@ -317,10 +290,8 @@ void output_node(nnode_t* node, short /*traverse_number*/, FILE* fp) {
             break;
         case INPUT_NODE:
         case OUTPUT_NODE:
-        case PAD_NODE:
+        case CONSTANT_DRIVER_NODE:
         case CLOCK_NODE:
-        case GND_NODE:
-        case VCC_NODE:
             /* some nodes already converted */
             break;
 
@@ -350,11 +321,11 @@ void output_node(nnode_t* node, short /*traverse_number*/, FILE* fp) {
 /*-------------------------------------------------------------------------
  * (function: define_logical_function)
  *-----------------------------------------------------------------------*/
-void define_logical_function(nnode_t* node, FILE* out) {
+void define_logical_function(nnode_t* node, FILE* out, netlist_t* netlist) {
     int i, j;
     char* temp_string;
 
-    print_dot_names_header(out, node);
+    print_dot_names_header(out, node, netlist);
 
     /* print out the blif definition of this gate */
     switch (node->type) {
@@ -439,10 +410,10 @@ void define_logical_function(nnode_t* node, FILE* out) {
 /*------------------------------------------------------------------------
  * (function: define_set_input_logical_function)
  *----------------------------------------------------------------------*/
-void define_set_input_logical_function(nnode_t* node, const char* bit_output, FILE* out) {
+void define_set_input_logical_function(nnode_t* node, const char* bit_output, FILE* out, netlist_t* netlist) {
     oassert(node->num_input_pins >= 1);
 
-    print_dot_names_header(out, node);
+    print_dot_names_header(out, node, netlist);
 
     /* print out the blif definition of this gate */
     if (bit_output != NULL) {
@@ -454,19 +425,13 @@ void define_set_input_logical_function(nnode_t* node, const char* bit_output, FI
 /*-------------------------------------------------------------------------
  * (function: define_ff)
  *-----------------------------------------------------------------------*/
-void define_ff(nnode_t* node, FILE* out) {
+void define_ff(nnode_t* node, FILE* out, netlist_t* netlist) {
     oassert(node->num_output_pins == 1);
     oassert(node->num_input_pins == 2);
 
-    int initial_value = global_args.sim_initial_value;
+    int initial_value = 3;
     if (node->has_initial_value)
         initial_value = node->initial_value;
-
-    /* By default, latches value are unknown, represented by 3 in a BLIF file
-     * and by -1 internally in ODIN */
-    // TODO switch to default!! to avoid confusion
-    if (initial_value == -1)
-        initial_value = 3;
 
     // grab the edge sensitivity of the flip flop
     const char* edge_type_str = edge_type_blif_str(node);
@@ -478,16 +443,16 @@ void define_ff(nnode_t* node, FILE* out) {
     fprintf(out, ".latch");
 
     /* input */
-    print_input_pin(out, node, 0);
+    print_input_pin(out, node, 0, netlist);
 
     /* output */
-    print_output_pin(out, node);
+    print_output_pin(out, node, netlist);
 
     /* sensitivity */
     fprintf(out, " %s", edge_type_str);
 
     /* clock */
-    print_input_pin(out, node, 1);
+    print_input_pin(out, node, 1, netlist);
 
     /* initial value */
     fprintf(out, " %d\n\n", initial_value);
@@ -496,9 +461,9 @@ void define_ff(nnode_t* node, FILE* out) {
 /*--------------------------------------------------------------------------
  * (function: define_decoded_mux)
  *------------------------------------------------------------------------*/
-void define_decoded_mux(nnode_t* node, FILE* out) {
+void define_decoded_mux(nnode_t* node, FILE* out, netlist_t* netlist) {
     oassert(node->input_port_sizes[0] == node->input_port_sizes[1]);
-    print_dot_names_header(out, node);
+    print_dot_names_header(out, node, netlist);
 
     /* generates: 1----- 1\n-1----- 1\n ... */
     for (long i = 0; i < node->input_port_sizes[0]; i++) {

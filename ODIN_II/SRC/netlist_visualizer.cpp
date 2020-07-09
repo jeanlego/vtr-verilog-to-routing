@@ -74,10 +74,10 @@ void depth_first_traversal_graph_display(FILE* out, uintptr_t marker_value, netl
         }
     }
     /* now traverse the ground and vcc pins */
-    if (netlist->gnd_node != NULL)
-        depth_first_traverse_visualize(netlist->gnd_node, out, marker_value);
-    if (netlist->vcc_node != NULL)
-        depth_first_traverse_visualize(netlist->vcc_node, out, marker_value);
+    for (BitSpace::bit_value_t driver = BitSpace::_start; driver <= BitSpace::_end; driver += 1) {
+        if (netlist->constant_nodes[driver] != NULL)
+            depth_first_traverse_visualize(netlist->constant_nodes[driver], out, marker_value);
+    }
 }
 
 /*---------------------------------------------------------------------------------------------

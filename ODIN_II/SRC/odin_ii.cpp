@@ -113,10 +113,6 @@ static ODIN_ERROR_CODE synthesize_verilog() {
      * function void next_parsed_verilog_file(ast_node_t *file_items_list) 
      */
 
-    /* after the ast is made potentially do tagging for downstream links to verilog */
-    if (global_args.high_level_block.provenance() == argparse::Provenance::SPECIFIED)
-        add_tag_data(verilog_ast);
-
     /**
      *  Now that we have a parse tree (abstract syntax tree [ast]) of
      *	the Verilog we want to make into a netlist. 
@@ -206,19 +202,11 @@ static ODIN_ERROR_CODE synthesize_verilog() {
 netlist_t* start_odin_ii(int argc, char** argv) {
     double total_time = wall_time();
 
-    try {
-        /* Some initialization */
-        one_string = vtr::strdup(ONE_VCC_CNS);
-        zero_string = vtr::strdup(ZERO_GND_ZERO);
-        pad_string = vtr::strdup(ZERO_PAD_ZERO);
-
-        printf("--------------------------------------------------------------------\n");
-        printf("Welcome to ODIN II version 0.1 - the better High level synthesis tools++ targetting FPGAs (mainly VPR)\n");
-        printf("Email: jamieson.peter@gmail.com and ken@unb.ca for support issues\n\n");
-    } catch (vtr::VtrError& vtr_error) {
-        printf("Odin failed to initialize %s with exit code%d\n", vtr_error.what(), ERROR_INITIALIZATION);
-        exit(ERROR_INITIALIZATION);
-    }
+    printf(
+        "--------------------------------------------------------------------\n"
+        "Welcome to ODIN II version 0.1 - the High level synthesis tools targetting FPGAs\n"
+        "Reach us on github.com/verilog-to-routing/vtr-verilog-to-routing for support issues\n"
+        "For more complete documentation see: https://docs.verilogtorouting.org/en/latest/odin/\n\n");
 
     try {
         /* Set up the global arguments to their default. */
@@ -340,24 +328,25 @@ int terminate_odin_ii(netlist_t* odin_netlist) {
 }
 
 struct ParseInitRegState {
-    int from_str(std::string str) {
+    BitSpace::bit_value_t from_str(std::string str) {
         if (str == "0")
-            return 0;
+            return BitSpace::_0;
         else if (str == "1")
-            return 1;
-        else if (str == "X")
-            return -1;
+            return BitSpace::_1;
+        else if (str == "X" || str == "x")
+            return BitSpace::_x;
+
         std::stringstream msg;
         msg << "Invalid conversion from '" << str << "' (expected one of: " << argparse::join(default_choices(), ", ") << ")";
         throw argparse::ArgParseConversionError(msg.str());
     }
 
-    std::string to_str(int val) {
-        if (val == 0)
+    std::string to_str(BitSpace::bit_value_t val) {
+        if (val == BitSpace::_0)
             return "0";
-        else if (val == 1)
+        else if (val == BitSpace::_1)
             return "1";
-        else if (val == -1)
+        else if (val == BitSpace::_x)
             return "X";
         std::stringstream msg;
         msg << "Invalid conversion from " << val;

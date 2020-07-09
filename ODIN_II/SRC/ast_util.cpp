@@ -44,53 +44,6 @@ STRING_CACHE* copy_param_table_sc(STRING_CACHE* to_copy);
 void assert_constant_positionnal_args(ast_node_t* node, long arg_count);
 void c_simple_print(std::string str);
 
-// HIGH LEVEL AST TAG
-static int high_level_id;
-
-/*---------------------------------------------------------------------------
- * (function: update_tree)
- *-------------------------------------------------------------------------*/
-void update_tree_tag(ast_node_t* node, int high_level_block_type_to_search, int tag) {
-    long i;
-    int tagged = tag;
-    if (node) {
-        if (node->type == high_level_block_type_to_search)
-            tagged = ++high_level_id;
-
-        if (tagged > -1) {
-            node->far_tag = tagged;
-            node->high_number = node->line_number;
-        }
-
-        for (i = 0; i < node->num_children; i++)
-            update_tree_tag(node->children[i], high_level_block_type_to_search, tagged);
-    }
-}
-
-/*---------------------------------------------------------------------------
- * (function: add_tag_data)
- *-------------------------------------------------------------------------*/
-void add_tag_data(ast_t* ast) {
-    long i;
-    high_level_id = -1;
-
-    ids type = NO_ID;
-    if (global_args.high_level_block.value() == "if") {
-        type = IF;
-    } else if (global_args.high_level_block.value() == "always") {
-        type = ALWAYS;
-    } else if (global_args.high_level_block.value() == "module") {
-        type = MODULE;
-    }
-
-    if (type != NO_ID) {
-        for (i = 0; i < ast->top_modules_count; i++)
-            update_tree_tag(ast->top_modules[i], type, -1);
-    }
-}
-
-// END HIGH LEVEL TAG
-
 /*---------------------------------------------------------------------------
  * (function: allocate_ast)
  *-------------------------------------------------------------------------*/
@@ -622,31 +575,11 @@ char** get_name_of_pins_number(ast_node_t* var_node, int /*start*/, int width) {
 
 char* get_name_of_pin_number(ast_node_t* var_node, int bit) {
     oassert(var_node->type == NUMBERS);
-    char* return_string = NULL;
-
     if (bit == -1)
         bit = 0;
 
-    BitSpace::bit_value_t c = var_node->types.vnumber->get_bit_from_lsb(bit);
-    switch (c) {
-        case BitSpace::_1:
-            return_string = vtr::strdup(ONE_VCC_CNS);
-            break;
-        case BitSpace::_0:
-            return_string = vtr::strdup(ZERO_GND_ZERO);
-            break;
-        case BitSpace::_x:
-            return_string = vtr::strdup(ZERO_GND_ZERO);
-            break;
-        case BitSpace::_z:
-            return_string = vtr::strdup(ZERO_PAD_ZERO);
-            break;
-        default:
-            error_message(AST, var_node->line_number, var_node->file_number, "Unrecognised character %c in binary string \"%s\"!\n", c, var_node->types.vnumber->to_vstring('B').c_str());
-            break;
-    }
-
-    return return_string;
+    BitSpace::bit_value_t value = var_node->types.vnumber->get_bit_from_lsb(bit);
+    return vtr::strdup(constant_drivers_STR[value]);
 }
 
 /*---------------------------------------------------------------------------------------------

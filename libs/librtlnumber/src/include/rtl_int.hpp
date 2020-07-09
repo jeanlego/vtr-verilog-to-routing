@@ -71,7 +71,9 @@ VNumber V_CASE_EQUAL(VNumber& a, VNumber& b);
 VNumber V_CASE_NOT_EQUAL(VNumber& a, VNumber& b);
 
 VNumber V_ADD(VNumber& a, VNumber& b);
+VNumber V_ADD(VNumber& a, VNumber& b, BitSpace::bit_value_t carry);
 VNumber V_MINUS(VNumber& a, VNumber& b);
+VNumber V_MINUS(VNumber& a, VNumber& b, BitSpace::bit_value_t carry);
 VNumber V_MULTIPLY(VNumber& a, VNumber& b);
 VNumber V_POWER(VNumber& a, VNumber& b);
 VNumber V_DIV(VNumber& a, VNumber& b);

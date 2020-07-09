@@ -48,6 +48,9 @@ constexpr bit_value_t _0 = 0x0;
 constexpr bit_value_t _1 = 0x1;
 constexpr bit_value_t _x = 0x2;
 constexpr bit_value_t _z = 0x3;
+/* for loops */
+constexpr bit_value_t _start = _0;
+constexpr bit_value_t _end = _z;
 
 /***                                                              
  * these are taken from the raw verilog truth tables so that the evaluation are correct.

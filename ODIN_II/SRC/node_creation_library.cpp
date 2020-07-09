@@ -33,37 +33,38 @@
 
 long unique_node_name_id = 0;
 
-/*-----------------------------------------------------------------------
- * (function: get_a_pad_pin)
- * 	this allows us to attach to the constant netlist driving hb_pad
- *---------------------------------------------------------------------*/
-npin_t* get_pad_pin(netlist_t* netlist) {
-    npin_t* pad_fanout_pin = allocate_npin();
-    pad_fanout_pin->name = vtr::strdup(pad_string);
-    add_fanout_pin_to_net(netlist->pad_net, pad_fanout_pin);
-    return pad_fanout_pin;
+npin_t* get_constant_driver_pin(netlist_t* netlist, BitSpace::bit_value_t value);
+
+npin_t* get_constant_driver_pin(netlist_t* netlist, BitSpace::bit_value_t value) {
+    npin_t* fanout_pin = allocate_npin();
+    fanout_pin->name = vtr::strdup(constant_drivers_STR[value]);
+    add_fanout_pin_to_net(netlist->constant_drivers[value], fanout_pin);
+    return fanout_pin;
 }
 
 /*-----------------------------------------------------------------------
- * (function: get_a_zero_pin)
+ * (function: get_zero_pin)
  * 	this allows us to attach to the constant netlist driving zero
  *---------------------------------------------------------------------*/
 npin_t* get_zero_pin(netlist_t* netlist) {
-    npin_t* zero_fanout_pin = allocate_npin();
-    zero_fanout_pin->name = vtr::strdup(zero_string);
-    add_fanout_pin_to_net(netlist->zero_net, zero_fanout_pin);
-    return zero_fanout_pin;
+    return get_constant_driver_pin(netlist, BitSpace::_0);
 }
 
 /*---------------------------------------------------------------------------------------------
- * (function: get_a_one_pin)
+ * (function: get_one_pin)
  * 	this allows us to attach to the constant netlist driving one
  *-------------------------------------------------------------------------------------------*/
 npin_t* get_one_pin(netlist_t* netlist) {
-    npin_t* one_fanout_pin = allocate_npin();
-    one_fanout_pin->name = vtr::strdup(one_string);
-    add_fanout_pin_to_net(netlist->one_net, one_fanout_pin);
-    return one_fanout_pin;
+    return get_constant_driver_pin(netlist, BitSpace::_1);
+}
+
+/*-----------------------------------------------------------------------
+ * (function: get_unconn_pin)
+ * 	this allows us to attach to the constant netlist driving hb_pad
+ *---------------------------------------------------------------------*/
+npin_t* get_unconn_pin(netlist_t* netlist) {
+    /* TODO: is this right? */
+    return get_constant_driver_pin(netlist, BitSpace::_z);
 }
 
 /*---------------------------------------------------------------------------------------------

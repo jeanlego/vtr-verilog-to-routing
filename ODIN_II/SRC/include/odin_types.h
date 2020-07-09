@@ -90,8 +90,6 @@ struct global_args_t {
     argparse::ArgValue<bool> permissive;         //turn possible_errors into warnings
     argparse::ArgValue<bool> print_parse_tokens; // print the tokens as they are parsed byt the parser
 
-    argparse::ArgValue<std::string> high_level_block; //Legacy option, no longer used
-
     argparse::ArgValue<std::string> top_level_module_name; // force the name of the top level module desired
 
     argparse::ArgValue<bool> write_netlist_as_dot;
@@ -147,9 +145,8 @@ struct global_args_t {
  */
 extern const char* file_extension_supported_STR[];
 
-extern const char* ZERO_GND_ZERO;
-extern const char* ONE_VCC_CNS;
-extern const char* ZERO_PAD_ZERO;
+extern const char* constant_drivers_STR[];
+extern const char* netlist_global_clock_STR;
 
 extern const char* SINGLE_PORT_RAM_string;
 extern const char* DUAL_PORT_RAM_string;
@@ -187,8 +184,7 @@ enum operation_list {
     BUF_NODE,
     INPUT_NODE,
     OUTPUT_NODE,
-    GND_NODE,
-    VCC_NODE,
+    CONSTANT_DRIVER_NODE,
     CLOCK_NODE,
     ADD,            // +
     MINUS,          // -
@@ -227,7 +223,6 @@ enum operation_list {
     BLIF_FUNCTION,
     NETLIST_FUNCTION,
     MEMORY,
-    PAD_NODE,
     HARD_IP,
     GENERIC,  /*added for the unknown node type */
     CLOG2,    // $clog2
@@ -461,7 +456,7 @@ struct nnode_t {
 
     netlist_t* internal_netlist; // this is a point of having a subgraph in a node
 
-    std::vector<std::vector<signed char>> memory_data;
+    std::vector<std::vector<BitSpace::bit_value_t>> memory_data;
     //(int cycle, int num_input_pins, npin_t *inputs, int num_output_pins, npin_t *outputs);
     void (*simulate_block_cycle)(int, int, int*, int, int*);
 
@@ -482,7 +477,7 @@ struct nnode_t {
     bool covered = false;
 
     //Generic gate output
-    unsigned char generic_output; //describes the output (1 or 0) of generic blocks
+    BitSpace::bit_value_t constant_output; //describes the output (1 or 0) of generic blocks
 };
 
 struct npin_t {
@@ -554,12 +549,12 @@ struct ast_t {
 struct netlist_t {
     char* identifier;
 
-    nnode_t* gnd_node;
-    nnode_t* vcc_node;
-    nnode_t* pad_node;
-    nnet_t* zero_net;
-    nnet_t* one_net;
-    nnet_t* pad_net;
+    nnode_t* constant_nodes[BitSpace::_end + 1];
+    nnet_t* constant_drivers[BitSpace::_end + 1];
+
+    nnet_t* global_clock_driver;
+    nnode_t* global_clock_node;
+
     nnode_t** top_input_nodes;
     int num_top_input_nodes;
     nnode_t** top_output_nodes;

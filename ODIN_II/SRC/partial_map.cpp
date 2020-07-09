@@ -86,9 +86,9 @@ void depth_first_traversal_to_partial_map(short marker_value, netlist_t* netlist
         }
     }
     /* now traverse the ground and vcc pins  */
-    depth_first_traverse_partial_map(netlist->gnd_node, marker_value, netlist);
-    depth_first_traverse_partial_map(netlist->vcc_node, marker_value, netlist);
-    depth_first_traverse_partial_map(netlist->pad_node, marker_value, netlist);
+    for (BitSpace::bit_value_t driver = BitSpace::_start; driver <= BitSpace::_end; driver += 1) {
+        depth_first_traverse_partial_map(netlist->constant_nodes[driver], marker_value, netlist);
+    }
 }
 
 /*---------------------------------------------------------------------------------------------
@@ -257,10 +257,8 @@ void partial_map_node(nnode_t* node, short traverse_number, netlist_t* netlist) 
         case INPUT_NODE:
         case CLOCK_NODE:
         case OUTPUT_NODE:
-        case GND_NODE:
-        case VCC_NODE:
+        case CONSTANT_DRIVER_NODE:
         case FF_NODE:
-        case PAD_NODE:
             /* some nodes already in the form that is mapable */
             break;
         case CASE_EQUAL:

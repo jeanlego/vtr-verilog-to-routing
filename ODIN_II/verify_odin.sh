@@ -183,8 +183,13 @@ function find_in_bench() {
 # Init Directories and cleanup
 function init_temp() {
 	OUTPUT_DIRECTORY=${REGRESSION_DIR}
-	if [ "_${_RUN_DIR_OVERRIDE}" != "_" ] && [ -d "${_RUN_DIR_OVERRIDE}" ]
+	if [ "_${_RUN_DIR_OVERRIDE}" != "_" ]
 	then
+		if [ ! -d "${_RUN_DIR_OVERRIDE}" ]
+		then
+			echo "Directory ${_RUN_DIR_OVERRIDE} does not exist"
+			_exit_with_code "-1"
+		fi
 		OUTPUT_DIRECTORY=${_RUN_DIR_OVERRIDE}
 	fi
 
@@ -276,7 +281,7 @@ function parse_args() {
 			shift
 		else
 		# parse [ OPTIONS / FLAGS ] 
-			case $1 in 
+			case "$1" in 
 
 			# Help Desk
 				-h|--help)
@@ -296,6 +301,16 @@ function parse_args() {
 					# concat tests
 					_TEST_INPUT_LIST+=( "$2" )
 					shift
+				;;-t*)
+					_t="${1/-t/}"
+					# this is handled down stream
+					if [ "_$_t" == "_" ]
+					then 
+						echo "empty argument for -t"
+						_exit_with_code "-1"
+					fi
+					# concat tests
+					_TEST_INPUT_LIST+=( "$_t" )
 
 				;;-d|--output_dir)
 
@@ -304,16 +319,17 @@ function parse_args() {
 						echo "empty argument for $1"
 						_exit_with_code "-1"
 					fi
-					
 					_RUN_DIR_OVERRIDE=$2
-
-					if [ ! -d "${_RUN_DIR_OVERRIDE}" ]
-					then
-						echo "Directory ${_RUN_DIR_OVERRIDE} does not exist"
+					echo "Running test from ${_RUN_DIR_OVERRIDE}"
+					shift
+				;;-d*)
+					_RUN_DIR_OVERRIDE="${1/-d/}"
+					if [ "_$2" == "_" ]
+					then 
+						echo "empty argument for -d"
 						_exit_with_code "-1"
 					fi
-
-					shift
+					echo "Running test from ${_RUN_DIR_OVERRIDE}"
 
 				;;-C|--config)
 
@@ -322,17 +338,27 @@ function parse_args() {
 						echo "empty argument for $1"
 						_exit_with_code "-1"
 					fi
-					
 					_EXTRA_CONFIG=$2
 					echo "Reading extra config directive from ${_EXTRA_CONFIG}"
-
 					shift
+				;;-C*)
+					_EXTRA_CONFIG=${1/-C/}
+					if [ "_$2" == "_" ]
+					then 
+						echo "empty argument for -C"
+						_exit_with_code "-1"
+					fi
+					echo "Reading extra config directive from ${_EXTRA_CONFIG}"
 
 			## number
 				;;-j|--nb_of_process)
 					_NUMBER_OF_PROCESS=$(_flag_is_number "$1" "$2")
 					echo "Using [$2] processors for this benchmarking suite"
 					shift
+				;;-j*)
+					count="${1/-j/}"
+					_NUMBER_OF_PROCESS=$(_flag_is_number "-j" "$count")
+					echo "Using [$count] processors for this benchmarking suite"
 
 			# Boolean flags
 				;;-g|--generate_bench)		

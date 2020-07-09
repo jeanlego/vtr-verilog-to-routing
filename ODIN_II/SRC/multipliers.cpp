@@ -965,7 +965,7 @@ void pad_multiplier(nnode_t* node, netlist_t* netlist) {
                 if (configuration.mult_padding == 0)
                     add_input_pin_to_node(node, get_zero_pin(netlist), i + sizea);
                 else
-                    add_input_pin_to_node(node, get_pad_pin(netlist), i + sizea);
+                    add_input_pin_to_node(node, get_unconn_pin(netlist), i + sizea);
             }
 
             node->input_port_sizes[0] = sizea + diffa;
@@ -977,7 +977,7 @@ void pad_multiplier(nnode_t* node, netlist_t* netlist) {
                 if (configuration.mult_padding == 0)
                     add_input_pin_to_node(node, get_zero_pin(netlist), node->num_input_pins - i);
                 else
-                    add_input_pin_to_node(node, get_pad_pin(netlist), node->num_input_pins - i);
+                    add_input_pin_to_node(node, get_unconn_pin(netlist), node->num_input_pins - i);
             }
 
             node->input_port_sizes[1] = sizeb + diffb;

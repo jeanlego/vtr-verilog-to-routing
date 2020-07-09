@@ -171,9 +171,7 @@ static void count_node_type(operation_list op, nnode_t* node, netlist_t* netlist
             count_node_type(ADD, node, netlist);
             break;
 
-        case PAD_NODE:
-        case GND_NODE:
-        case VCC_NODE:
+        case CONSTANT_DRIVER_NODE:
             /* These are irrelevent so we dont output */
             break;
 

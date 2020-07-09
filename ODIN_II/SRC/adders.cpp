@@ -500,7 +500,7 @@ void init_split_adder(nnode_t* node, nnode_t* ptr, int a, int sizea, int b, int 
                 }
             } else {
                 if (sizea == 0)
-                    connect_nodes(netlist->gnd_node, 0, ptr, 0);
+                    connect_nodes(netlist->constant_nodes[BitSpace::_0], 0, ptr, 0);
                 else {
                     num = node->input_port_sizes[0];
                     for (i = 0; i < current_sizea; i++) {
@@ -564,7 +564,7 @@ void init_split_adder(nnode_t* node, nnode_t* ptr, int a, int sizea, int b, int 
                 }
             } else {
                 if (sizeb == 0)
-                    connect_nodes(netlist->gnd_node, 0, ptr, current_sizea);
+                    connect_nodes(netlist->constant_nodes[BitSpace::_0], 0, ptr, current_sizea);
                 else {
                     num = node->input_port_sizes[0] + node->input_port_sizes[1];
                     for (i = 0; i < current_sizeb; i++) {
@@ -675,8 +675,8 @@ void split_adder(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int cin, in
     // don't add a dummy adder in the beginning of the chain if the first cin will be connected to a global gnd
     if ((flag == 0 || count > 1) && !configuration.adder_cin_global) {
         //connect the a[0] and b[0] of first adder node to ground
-        connect_nodes(netlist->vcc_node, 0, node[0], 0);
-        connect_nodes(netlist->gnd_node, 0, node[0], sizea);
+        connect_nodes(netlist->constant_nodes[BitSpace::_1], 0, node[0], 0);
+        connect_nodes(netlist->constant_nodes[BitSpace::_0], 0, node[0], sizea);
         //hang the first sumout
         node[0]->output_pins[1] = allocate_npin();
         node[0]->output_pins[1]->name = append_string("", "%s~dummy_output~%d~%d", node[0]->name, 0, 1);
@@ -684,7 +684,7 @@ void split_adder(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int cin, in
 
     if (nodeo->num_input_port_sizes == 2) {
         //connect the first cin pin to unconn
-        connect_nodes(netlist->pad_node, 0, node[0], node[0]->num_input_pins - 1);
+        connect_nodes(netlist->constant_nodes[BitSpace::_z], 0, node[0], node[0]->num_input_pins - 1);
     } else if (nodeo->num_input_port_sizes == 3) {
         //remap the first cin pins)
         remap_pin_to_new_node(nodeo->input_pins[nodeo->num_input_pins - 1], node[0], (node[0]->num_input_pins - 1));
@@ -692,8 +692,8 @@ void split_adder(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int cin, in
     //if (a + 1) % sizea == 0, the a[0] and b[0] of node[count-1] should connect to gound
     if ((a + 1) % sizea == 0 && (b + 1) % sizeb == 0) {
         if (flag == 0) {
-            connect_nodes(netlist->gnd_node, 0, node[count - 1], 0);
-            connect_nodes(netlist->gnd_node, 0, node[count - 1], sizea);
+            connect_nodes(netlist->constant_nodes[BitSpace::_0], 0, node[count - 1], 0);
+            connect_nodes(netlist->constant_nodes[BitSpace::_0], 0, node[count - 1], sizea);
         }
     }
 
@@ -702,13 +702,13 @@ void split_adder(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int cin, in
         num = node[i]->num_input_pins;
         for (j = 0; j < num - 1; j++) {
             if (node[i]->input_pins[j] == NULL)
-                connect_nodes(netlist->pad_node, 0, node[i], j);
+                connect_nodes(netlist->constant_nodes[BitSpace::_z], 0, node[i], j);
         }
     }
 
     if (configuration.adder_cin_global) {
         // connect first cin to gnd
-        connect_nodes(netlist->gnd_node, 0, node[0], (node[0]->num_input_pins - 1));
+        connect_nodes(netlist->constant_nodes[BitSpace::_0], 0, node[0], (node[0]->num_input_pins - 1));
     }
 
     //connect cout to next cin
@@ -1170,12 +1170,12 @@ static nnode_t* make_adder(operation_list funct, nnode_t* current_adder, nnode_t
     nnode_t* new_funct = NULL;
     short is_three_port_gate = 0;
 
-    if (previous_carry == netlist->gnd_node) {
+    if (previous_carry == netlist->constant_nodes[BitSpace::_0]) {
         if (funct == ADDER_FUNC)
             new_funct = make_2port_gate(LOGICAL_XOR, 1, 1, 1, node, mark);
         else if (funct == CARRY_FUNC)
             new_funct = make_2port_gate(LOGICAL_AND, 1, 1, 1, node, mark);
-    } else if (previous_carry == netlist->vcc_node) {
+    } else if (previous_carry == netlist->constant_nodes[BitSpace::_1]) {
         if (funct == ADDER_FUNC)
             new_funct = make_2port_gate(LOGICAL_XNOR, 1, 1, 1, node, mark);
         else if (funct == CARRY_FUNC)
@@ -1196,29 +1196,35 @@ static nnode_t* make_adder(operation_list funct, nnode_t* current_adder, nnode_t
         //connect input a
         if (current_pin < width[1]) {
             npin_t* temp_pin = node->input_pins[current_pin];
-            if (temp_pin->net->driver_pin == NULL || temp_pin->net->driver_pin->node->type == GND_NODE) {
-                connect_nodes(netlist->gnd_node, 0, new_funct, 0 + is_three_port_gate);
+            if (temp_pin->net->driver_pin == NULL
+                || (temp_pin->net->driver_pin->node->type == CONSTANT_DRIVER_NODE
+                    && temp_pin->net->driver_pin->node->constant_output == BitSpace::_0)) {
+                connect_nodes(netlist->constant_nodes[BitSpace::_0], 0, new_funct, 0 + is_three_port_gate);
                 remove_fanout_pins_from_net(temp_pin->net, temp_pin, temp_pin->pin_net_idx);
-            } else if (temp_pin->net->driver_pin->node->type == VCC_NODE) {
-                connect_nodes(netlist->vcc_node, 0, new_funct, 0 + is_three_port_gate);
+            } else if (temp_pin->net->driver_pin->node->type == CONSTANT_DRIVER_NODE
+                       && temp_pin->net->driver_pin->node->constant_output == BitSpace::_1) {
+                connect_nodes(netlist->constant_nodes[BitSpace::_1], 0, new_funct, 0 + is_three_port_gate);
                 remove_fanout_pins_from_net(temp_pin->net, temp_pin, temp_pin->pin_net_idx);
             } else {
                 remap_pin_to_new_node(temp_pin, new_funct, 0 + is_three_port_gate);
             }
         } else {
-            connect_nodes(netlist->gnd_node, 0, new_funct, 0 + is_three_port_gate);
+            connect_nodes(netlist->constant_nodes[BitSpace::_0], 0, new_funct, 0 + is_three_port_gate);
         }
 
         //connect input b
         if (current_pin < width[2]) {
             //pin a is neighbor to pin b
             npin_t* temp_pin = node->input_pins[current_pin + width[1]];
-            if (temp_pin->net->driver_pin == NULL || temp_pin->net->driver_pin->node->type == GND_NODE) {
-                nnode_t* attach_to = (subtraction) ? netlist->vcc_node : netlist->gnd_node;
-                connect_nodes(attach_to, 0, new_funct, 1 + is_three_port_gate);
-                remove_fanout_pins_from_net(temp_pin->net, temp_pin, temp_pin->pin_net_idx);
-            } else if (temp_pin->net->driver_pin->node->type == VCC_NODE) {
-                nnode_t* attach_to = (subtraction) ? netlist->gnd_node : netlist->vcc_node;
+            if (temp_pin->net->driver_pin == NULL) {
+                temp_pin->net->driver_pin = get_zero_pin(netlist);
+            }
+            if (temp_pin->net->driver_pin->node->type == CONSTANT_DRIVER_NODE) {
+                nnode_t* attach_to = netlist->constant_nodes[temp_pin->net->driver_pin->node->constant_output];
+                if (subtraction) {
+                    BitSpace::bit_value_t invert_value = BitSpace::l_not[temp_pin->net->driver_pin->node->constant_output];
+                    attach_to = netlist->constant_nodes[invert_value];
+                }
                 connect_nodes(attach_to, 0, new_funct, 1 + is_three_port_gate);
                 remove_fanout_pins_from_net(temp_pin->net, temp_pin, temp_pin->pin_net_idx);
             } else {
@@ -1231,7 +1237,7 @@ static nnode_t* make_adder(operation_list funct, nnode_t* current_adder, nnode_t
                 }
             }
         } else {
-            nnode_t* attach_to = (subtraction) ? netlist->vcc_node : netlist->gnd_node;
+            nnode_t* attach_to = (subtraction) ? netlist->constant_nodes[BitSpace::_1] : netlist->constant_nodes[BitSpace::_0];
             connect_nodes(attach_to, 0, new_funct, 1 + is_three_port_gate);
         }
     }
@@ -1239,7 +1245,7 @@ static nnode_t* make_adder(operation_list funct, nnode_t* current_adder, nnode_t
 }
 
 void instantiate_add_w_carry_block(int* width, nnode_t* node, short mark, netlist_t* netlist, short subtraction) {
-    nnode_t* previous_carry = (subtraction) ? netlist->vcc_node : netlist->gnd_node;
+    nnode_t* previous_carry = (subtraction) ? netlist->constant_nodes[BitSpace::_1] : netlist->constant_nodes[BitSpace::_0];
 
     for (int i = 0; i < width[0]; i++) {
         /* set of flags for building purposes */

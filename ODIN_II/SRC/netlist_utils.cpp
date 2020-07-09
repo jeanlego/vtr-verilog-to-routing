@@ -85,7 +85,7 @@ nnode_t* allocate_nnode() {
     new_node->has_initial_value = false;
     new_node->initial_value = 0;
 
-    new_node->generic_output = -1;
+    new_node->constant_output = BitSpace::_x;
 
     return new_node;
 }
@@ -427,10 +427,10 @@ void combine_nets(nnet_t* output_net, nnet_t* input_net, netlist_t* netlist) {
     input_net->initial_value = output_net->initial_value;
 
     /* special cases for global nets */
-    if (output_net == netlist->zero_net) {
-        netlist->zero_net = input_net;
-    } else if (output_net == netlist->one_net) {
-        netlist->one_net = input_net;
+    for (BitSpace::bit_value_t driver = BitSpace::_start; driver <= BitSpace::_end; driver += 1) {
+        if (output_net == netlist->constant_drivers[driver]) {
+            netlist->constant_drivers[driver] = input_net;
+        }
     }
 
     /* free the driver net */
@@ -713,7 +713,7 @@ void hookup_hb_input_pins_from_signal_list(nnode_t* node, int n_start_idx, signa
             add_input_pin_to_node(node, input_list->pins[il_start_idx + i], n_start_idx + i);
         } else {
             /* connect with "pad" signal for later resolution */
-            add_input_pin_to_node(node, get_pad_pin(netlist), n_start_idx + i);
+            add_input_pin_to_node(node, get_unconn_pin(netlist), n_start_idx + i);
 
             if (global_args.all_warnings)
                 warning_message(NETLIST, -1, -1, "padding an input port with HB_PAD for node %s\n", node->name);
@@ -754,9 +754,9 @@ int count_nodes_in_netlist(netlist_t* netlist) {
     int count = 0;
 
     /* now traverse the ground and vcc pins */
-    depth_traverse_count(netlist->gnd_node, &count, COUNT_NODES);
-    depth_traverse_count(netlist->vcc_node, &count, COUNT_NODES);
-    depth_traverse_count(netlist->pad_node, &count, COUNT_NODES);
+    for (BitSpace::bit_value_t driver = BitSpace::_start; driver <= BitSpace::_end; driver += 1) {
+        depth_traverse_count(netlist->constant_nodes[driver], &count, COUNT_NODES);
+    }
 
     /* start with the primary input list */
     for (i = 0; i < netlist->num_top_input_nodes; i++) {
@@ -812,12 +812,10 @@ netlist_t* allocate_netlist() {
 
     new_netlist = (netlist_t*)my_malloc_struct(sizeof(netlist_t));
 
-    new_netlist->gnd_node = NULL;
-    new_netlist->vcc_node = NULL;
-    new_netlist->pad_node = NULL;
-    new_netlist->zero_net = NULL;
-    new_netlist->one_net = NULL;
-    new_netlist->pad_net = NULL;
+    for (BitSpace::bit_value_t driver = BitSpace::_start; driver <= BitSpace::_end; driver += 1) {
+        new_netlist->constant_nodes[driver] = NULL;
+        new_netlist->constant_drivers[driver] = NULL;
+    }
     new_netlist->top_input_nodes = NULL;
     new_netlist->num_top_input_nodes = 0;
     new_netlist->top_output_nodes = NULL;
@@ -860,6 +858,11 @@ void free_netlist(netlist_t* to_free) {
     sc_free_string_cache(to_free->nets_sc);
     sc_free_string_cache(to_free->out_pins_sc);
     sc_free_string_cache(to_free->nodes_sc);
+
+    for (BitSpace::bit_value_t driver = BitSpace::_start; driver <= BitSpace::_end; driver += 1) {
+        vtr::free(to_free->constant_nodes[driver]->name);
+        vtr::free(to_free->constant_drivers[driver]->name);
+    }
 }
 
 /*---------------------------------------------------------------------------------------------
@@ -1063,10 +1066,10 @@ void remove_fanout_pins_from_net(nnet_t* net, npin_t* /*pin*/, int id) {
 //   nnode_t * node;
 
 //   printf("printing the netlist : %s\n",name);
-//   /* gnd_node */
-//   node=netlist->gnd_node;
-//   net=netlist->zero_net;
-//   printf("--------gnd_node-------\n");
+//   /* [BitSpace::_0]; */
+//   node=netlist->constant_nodes[BitSpace::_0];
+//   net=netlist->constant_drivers[BitSpace::_0];
+//   printf("--------[BitSpace::_0];-------\n");
 //   printf(" unique_id: %ld   name: %s type: %ld\n",node->unique_id,node->name,node->type);
 //   printf(" num_input_pins: %ld  num_input_port_sizes: %ld",node->num_input_pins,node->num_input_port_sizes);
 //   for(i=0;i<node->num_input_port_sizes;i++)
@@ -1100,10 +1103,10 @@ void remove_fanout_pins_from_net(nnet_t* net, npin_t* /*pin*/, int id) {
 //     printf("fanout_pins %ld : %s",i,net->fanout_pins[i]->name);
 //   }
 
-//    /* vcc_node */
-//   node=netlist->vcc_node;
-//   net=netlist->one_net;
-//   printf("\n--------vcc_node-------\n");
+//    /* constant_nodes[BitSpace::_1] */
+//   node=netlist->constant_nodes[BitSpace::_1];
+//   net=netlist->constant_drivers[BitSpace::_1];
+//   printf("\n--------constant_nodes[BitSpace::_1]-------\n");
 //   printf(" unique_id: %ld   name: %s type: %ld\n",node->unique_id,node->name,node->type);
 //   printf(" num_input_pins: %ld  num_input_port_sizes: %ld",node->num_input_pins,node->num_input_port_sizes);
 //   for(i=0;i<node->num_input_port_sizes;i++)
@@ -1136,10 +1139,10 @@ void remove_fanout_pins_from_net(nnet_t* net, npin_t* /*pin*/, int id) {
 //     printf("fanout_pins %ld : %s",i,net->fanout_pins[i]->name);
 //   }
 
-//   /* pad_node */
-//   node=netlist->pad_node;
-//   net=netlist->pad_net;
-//   printf("\n--------pad_node-------\n");
+//   /* constant_nodes[BitSpace::_z /* TODO: is this the right one? */ ] */
+//   node=netlist->constant_nodes[BitSpace::_z /* TODO: is this the right one? */ ];
+//   net=netlist->constant_drivers[BitSpace::_z /* TODO: is this the right one? */ ];
+//   printf("\n--------constant_nodes[BitSpace::_z /* TODO: is this the right one? */ ]-------\n");
 //   printf(" unique_id: %ld   name: %s type: %ld\n",node->unique_id,node->name,node->type);
 //   printf(" num_input_pins: %ld  num_input_port_sizes: %ld",node->num_input_pins,node->num_input_port_sizes);
 //   for(i=0;i<node->num_input_port_sizes;i++)
