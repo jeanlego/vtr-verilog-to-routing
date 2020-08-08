@@ -48,6 +48,10 @@ constexpr bit_value_t _0 = 0x0;
 constexpr bit_value_t _1 = 0x1;
 constexpr bit_value_t _x = 0x2;
 constexpr bit_value_t _z = 0x3;
+/* limits */
+constexpr bit_value_t _end = 0x3;
+constexpr bit_value_t _start = 0x0;
+constexpr bit_value_t _size = 0x4;
 
 /***                                                              
  * these are taken from the raw verilog truth tables so that the evaluation are correct.
@@ -628,6 +632,19 @@ class VerilogBits {
         return other;
     }
 
+    VerilogBits increment(BitSpace::bit_value_t carry) {
+        VerilogBits other(this->bit_size, _0);
+
+        for (size_t i = 0; i < this->size(); i++) {
+            BitSpace::bit_value_t current_bit = this->get_bit(i);
+
+            other.set_bit(i, BitSpace::l_half_sum[carry][current_bit]);
+            carry = BitSpace::l_half_carry[carry][current_bit];
+        }
+
+        return other;
+    }
+
     VerilogBits twos_complement(BitSpace::bit_value_t previous_carry) {
         VerilogBits other(this->bit_size, _0);
 
@@ -1039,6 +1056,10 @@ class VNumber {
 
     bool is_false() {
         return this->bitstring.is_false();
+    }
+
+    VNumber increment(BitSpace::bit_value_t carry) {
+        return VNumber(this->bitstring.increment(carry), this->defined_size, this->sign);
     }
 
     VNumber twos_complement(BitSpace::bit_value_t carry) {

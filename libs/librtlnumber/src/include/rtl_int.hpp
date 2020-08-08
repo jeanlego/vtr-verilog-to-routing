@@ -29,6 +29,7 @@ std::string V_STRING(VNumber& a);
 VNumber V_UNSIGNED(VNumber& a);
 VNumber V_SIGNED(VNumber& a);
 VNumber V_ADD(VNumber& a);
+VNumber V_ADD(VNumber& a, BitSpace::bit_value_t carry);
 VNumber V_MINUS(VNumber& a);
 VNumber V_MINUS(VNumber& a, BitSpace::bit_value_t carry);
 

@@ -243,6 +243,10 @@ VNumber V_ADD(VNumber& a) {
     return result;
 }
 
+VNumber V_ADD(VNumber& a, BitSpace::bit_value_t carry) {
+    return a.increment(carry);
+}
+
 VNumber V_MINUS(VNumber& a) {
     return a.twos_complement();
 }
