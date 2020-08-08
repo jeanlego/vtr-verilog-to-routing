@@ -21,20 +21,12 @@ const char* edge_type_e_STR[] = {
     "ASYNCHRONOUS_SENSITIVITY",
 };
 
-const char* _ZERO_GND_ZERO[] = {
-    "ZERO_GND_ZERO", "ZGZ"};
-
-const char* _ONE_VCC_CNS[] = {
-    "ONE_VCC_CNS",
-    "OVC",
+const char* constant_driver_STR[] = {
+    "0_GND_0",
+    "1_VCC_1",
+    "0_GND_0", // same as 0
+    "Z_PAD_Z",
 };
-
-const char* _ZERO_PAD_ZERO[] = {
-    "ZERO_PAD_ZERO", "ZPZ"};
-
-const char* ZERO_GND_ZERO = _ZERO_GND_ZERO[ODIN_STRING_TYPE];
-const char* ONE_VCC_CNS = _ONE_VCC_CNS[ODIN_STRING_TYPE];
-const char* ZERO_PAD_ZERO = _ZERO_PAD_ZERO[ODIN_STRING_TYPE];
 
 const char* SINGLE_PORT_RAM_string = "single_port_ram";
 const char* DUAL_PORT_RAM_string = "dual_port_ram";
@@ -46,8 +38,7 @@ const char* operation_list_STR[][2] = {
     {"BUF_NODE", "BUF"},
     {"INPUT_NODE", "IN"},
     {"OUTPUT_NODE", "OUT"},
-    {"GND_NODE", "GND"},
-    {"VCC_NODE", "VCC"},
+    {"CONST_NODE", "CONST"},
     {"CLOCK_NODE", "CLK"},
     {"ADD", "ADD"},             // +
     {"MINUS", "MIN"},           // -
@@ -87,7 +78,6 @@ const char* operation_list_STR[][2] = {
     {"BLIF_FUNCTION", "BLIFf"},
     {"NETLIST_FUNCTION", "NETf"},
     {"MEMORY", "MEM"},
-    {"PAD_NODE", "PAD"},
     {"HARD_IP", "HARD"},
     {"GENERIC", "GEN"},   /*added for the unknown node type */
     {"CLOG2", "CL2"},     // $clog2

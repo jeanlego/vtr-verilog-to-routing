@@ -209,9 +209,10 @@ netlist_t* start_odin_ii(int argc, char** argv) {
 
     try {
         /* Some initialization */
-        one_string = vtr::strdup(ONE_VCC_CNS);
-        zero_string = vtr::strdup(ZERO_GND_ZERO);
-        pad_string = vtr::strdup(ZERO_PAD_ZERO);
+        constant_string[BitSpace::_1] = vtr::strdup(constant_driver_STR[BitSpace::_1]);
+        constant_string[BitSpace::_0] = vtr::strdup(constant_driver_STR[BitSpace::_0]);
+        constant_string[BitSpace::_x] = vtr::strdup(constant_driver_STR[BitSpace::_x]);
+        constant_string[BitSpace::_z] = vtr::strdup(constant_driver_STR[BitSpace::_z]);
 
     } catch (vtr::VtrError& vtr_error) {
         printf("Odin failed to initialize %s with exit code%d\n", vtr_error.what(), ERROR_INITIALIZATION);

@@ -52,7 +52,7 @@ void graphVizOutputNetlist(std::string path, const char* name, uintptr_t marker_
     fp = fopen(path_and_file, "w");
 
     /* open graph */
-    fprintf(fp, "digraph G {\n\tranksep=.25;\n");
+    fprintf(fp, "digraph G {\n\tranksep=.25; rankdir=LR;\n");
 
     depth_first_traversal_graph_display(fp, marker_value, netlist);
 
@@ -69,21 +69,19 @@ void depth_first_traversal_graph_display(FILE* out, uintptr_t marker_value, netl
 
     /* start with the primary input list */
     for (i = 0; i < netlist->num_top_input_nodes; i++) {
-        if (netlist->top_input_nodes[i] != NULL) {
-            depth_first_traverse_visualize(netlist->top_input_nodes[i], out, marker_value);
-        }
+        depth_first_traverse_visualize(netlist->top_input_nodes[i], out, marker_value);
     }
     /* now traverse the ground and vcc pins */
-    if (netlist->gnd_node != NULL)
-        depth_first_traverse_visualize(netlist->gnd_node, out, marker_value);
-    if (netlist->vcc_node != NULL)
-        depth_first_traverse_visualize(netlist->vcc_node, out, marker_value);
+    depth_first_traverse_visualize(netlist->constant_node[BitSpace::_0], out, marker_value);
+    depth_first_traverse_visualize(netlist->constant_node[BitSpace::_1], out, marker_value);
 }
 
 /*---------------------------------------------------------------------------------------------
  * (function: depth_first_traverse)
  *-------------------------------------------------------------------------------------------*/
 void depth_first_traverse_visualize(nnode_t* node, FILE* fp, uintptr_t traverse_mark_number) {
+    if (!node)
+        return;
     int i, j;
     nnode_t* next_node;
     nnet_t* next_net;

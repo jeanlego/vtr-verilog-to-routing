@@ -108,17 +108,17 @@ void sequential_levelized_dfs(short marker_value, netlist_t* netlist) {
     }
 
     /* now traverse the ground and vcc pins */
-    if (netlist->gnd_node != NULL) {
-        netlist->sequential_level_nodes[sequential_level][i] = netlist->gnd_node;
+    if (netlist->constant_node[BitSpace::_0] != NULL) {
+        netlist->sequential_level_nodes[sequential_level][i] = netlist->constant_node[BitSpace::_0];
         netlist->num_at_sequential_level[sequential_level]++;
         /* record the level */
-        netlist->gnd_node->sequential_level = sequential_level;
+        netlist->constant_node[BitSpace::_0]->sequential_level = sequential_level;
     }
-    if (netlist->vcc_node != NULL) {
-        netlist->sequential_level_nodes[sequential_level][i + 1] = netlist->vcc_node;
+    if (netlist->constant_node[BitSpace::_1] != NULL) {
+        netlist->sequential_level_nodes[sequential_level][i + 1] = netlist->constant_node[BitSpace::_1];
         netlist->num_at_sequential_level[sequential_level]++;
         /* record the level */
-        netlist->vcc_node->sequential_level = sequential_level;
+        netlist->constant_node[BitSpace::_1]->sequential_level = sequential_level;
     }
 
     while (netlist->num_at_sequential_level[sequential_level] > 0) {
@@ -228,10 +228,10 @@ void depth_first_traversal_check_if_forward_leveled(short marker_value, netlist_
         }
     }
     /* now traverse the ground and vcc pins */
-    if (netlist->gnd_node != NULL)
-        depth_first_traverse_check_if_forward_leveled(netlist->gnd_node, marker_value);
-    if (netlist->vcc_node != NULL)
-        depth_first_traverse_check_if_forward_leveled(netlist->vcc_node, marker_value);
+    if (netlist->constant_node[BitSpace::_0] != NULL)
+        depth_first_traverse_check_if_forward_leveled(netlist->constant_node[BitSpace::_0], marker_value);
+    if (netlist->constant_node[BitSpace::_1] != NULL)
+        depth_first_traverse_check_if_forward_leveled(netlist->constant_node[BitSpace::_1], marker_value);
 }
 
 /*---------------------------------------------------------------------------------------------
@@ -293,24 +293,24 @@ void levelize_forwards(netlist_t* netlist) {
     netlist->forward_levels[netlist->num_forward_levels - 1] = NULL;
     netlist->num_at_forward_level[netlist->num_forward_levels - 1] = 0;
     for (i = 0; i < netlist->num_top_input_nodes + 3; i++) {
-        if ((i == netlist->num_top_input_nodes) && (netlist->vcc_node != NULL)) {
+        if ((i == netlist->num_top_input_nodes) && (netlist->constant_node[BitSpace::_1] != NULL)) {
             /* vcc */
             netlist->forward_levels[cur_for_level] = (nnode_t**)vtr::realloc(netlist->forward_levels[cur_for_level], sizeof(nnode_t*) * (netlist->num_at_forward_level[cur_for_level] + 1));
-            netlist->forward_levels[cur_for_level][netlist->num_at_forward_level[cur_for_level]] = netlist->vcc_node;
+            netlist->forward_levels[cur_for_level][netlist->num_at_forward_level[cur_for_level]] = netlist->constant_node[BitSpace::_1];
             netlist->num_at_forward_level[cur_for_level]++;
-            netlist->vcc_node->forward_level = 0;
-        } else if ((i == netlist->num_top_input_nodes + 1) && (netlist->gnd_node != NULL)) {
+            netlist->constant_node[BitSpace::_1]->forward_level = 0;
+        } else if ((i == netlist->num_top_input_nodes + 1) && (netlist->constant_node[BitSpace::_0] != NULL)) {
             /* gnd */
             netlist->forward_levels[cur_for_level] = (nnode_t**)vtr::realloc(netlist->forward_levels[cur_for_level], sizeof(nnode_t*) * (netlist->num_at_forward_level[cur_for_level] + 1));
-            netlist->forward_levels[cur_for_level][netlist->num_at_forward_level[cur_for_level]] = netlist->gnd_node;
+            netlist->forward_levels[cur_for_level][netlist->num_at_forward_level[cur_for_level]] = netlist->constant_node[BitSpace::_0];
             netlist->num_at_forward_level[cur_for_level]++;
-            netlist->gnd_node->forward_level = 0;
-        } else if ((i == netlist->num_top_input_nodes + 2) && (netlist->pad_node != NULL)) {
+            netlist->constant_node[BitSpace::_0]->forward_level = 0;
+        } else if ((i == netlist->num_top_input_nodes + 2) && (netlist->constant_node[BitSpace::_z] != NULL)) {
             /* pad */
             netlist->forward_levels[cur_for_level] = (nnode_t**)vtr::realloc(netlist->forward_levels[cur_for_level], sizeof(nnode_t*) * (netlist->num_at_forward_level[cur_for_level] + 1));
-            netlist->forward_levels[cur_for_level][netlist->num_at_forward_level[cur_for_level]] = netlist->pad_node;
+            netlist->forward_levels[cur_for_level][netlist->num_at_forward_level[cur_for_level]] = netlist->constant_node[BitSpace::_z];
             netlist->num_at_forward_level[cur_for_level]++;
-            netlist->pad_node->forward_level = 0;
+            netlist->constant_node[BitSpace::_z]->forward_level = 0;
         } else if (i >= netlist->num_top_input_nodes) {
             continue;
         } else if (netlist->top_input_nodes[i] != NULL) {

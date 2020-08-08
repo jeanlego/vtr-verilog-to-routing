@@ -192,13 +192,13 @@ void output_blif(FILE* out, netlist_t* netlist) {
 void depth_first_traversal_to_output(short marker_value, FILE* fp, netlist_t* netlist) {
     int i;
 
-    netlist->gnd_node->name = vtr::strdup("gnd");
-    netlist->vcc_node->name = vtr::strdup("vcc");
-    netlist->pad_node->name = vtr::strdup("unconn");
+    netlist->constant_node[BitSpace::_0]->name = vtr::strdup("gnd");
+    netlist->constant_node[BitSpace::_1]->name = vtr::strdup("vcc");
+    netlist->constant_node[BitSpace::_z]->name = vtr::strdup("unconn");
     /* now traverse the ground, vcc, and unconn pins */
-    depth_traverse_output_blif(netlist->gnd_node, marker_value, fp);
-    depth_traverse_output_blif(netlist->vcc_node, marker_value, fp);
-    depth_traverse_output_blif(netlist->pad_node, marker_value, fp);
+    depth_traverse_output_blif(netlist->constant_node[BitSpace::_0], marker_value, fp);
+    depth_traverse_output_blif(netlist->constant_node[BitSpace::_1], marker_value, fp);
+    depth_traverse_output_blif(netlist->constant_node[BitSpace::_z], marker_value, fp);
 
     /* start with the primary input list */
     for (i = 0; i < netlist->num_top_input_nodes; i++) {
@@ -315,10 +315,8 @@ void output_node(nnode_t* node, short /*traverse_number*/, FILE* fp) {
             break;
         case INPUT_NODE:
         case OUTPUT_NODE:
-        case PAD_NODE:
+        case CONST_NODE:
         case CLOCK_NODE:
-        case GND_NODE:
-        case VCC_NODE:
             /* some nodes already converted */
             break;
 

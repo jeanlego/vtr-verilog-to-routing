@@ -86,6 +86,7 @@ nnode_t* allocate_nnode(loc_t loc) {
     new_node->initial_value = init_value_e::undefined;
 
     new_node->generic_output = -1;
+    new_node->const_value = BitSpace::_x;
 
     return new_node;
 }
@@ -425,10 +426,10 @@ void combine_nets(nnet_t* output_net, nnet_t* input_net, netlist_t* netlist) {
     input_net->initial_value = output_net->initial_value;
 
     /* special cases for global nets */
-    if (output_net == netlist->zero_net) {
-        netlist->zero_net = input_net;
-    } else if (output_net == netlist->one_net) {
-        netlist->one_net = input_net;
+    if (output_net == netlist->constant_net[BitSpace::_0]) {
+        netlist->constant_net[BitSpace::_0] = input_net;
+    } else if (output_net == netlist->constant_net[BitSpace::_1]) {
+        netlist->constant_net[BitSpace::_1] = input_net;
     }
 
     /* free the driver net */
@@ -753,9 +754,9 @@ int count_nodes_in_netlist(netlist_t* netlist) {
     int count = 0;
 
     /* now traverse the ground and vcc pins */
-    depth_traverse_count(netlist->gnd_node, &count, COUNT_NODES);
-    depth_traverse_count(netlist->vcc_node, &count, COUNT_NODES);
-    depth_traverse_count(netlist->pad_node, &count, COUNT_NODES);
+    depth_traverse_count(netlist->constant_node[BitSpace::_0], &count, COUNT_NODES);
+    depth_traverse_count(netlist->constant_node[BitSpace::_1], &count, COUNT_NODES);
+    depth_traverse_count(netlist->constant_node[BitSpace::_z], &count, COUNT_NODES);
 
     /* start with the primary input list */
     for (i = 0; i < netlist->num_top_input_nodes; i++) {
@@ -811,12 +812,14 @@ netlist_t* allocate_netlist() {
 
     new_netlist = (netlist_t*)my_malloc_struct(sizeof(netlist_t));
 
-    new_netlist->gnd_node = NULL;
-    new_netlist->vcc_node = NULL;
-    new_netlist->pad_node = NULL;
-    new_netlist->zero_net = NULL;
-    new_netlist->one_net = NULL;
-    new_netlist->pad_net = NULL;
+    new_netlist->constant_node[BitSpace::_0] = NULL;
+    new_netlist->constant_node[BitSpace::_1] = NULL;
+    new_netlist->constant_node[BitSpace::_x] = NULL;
+    new_netlist->constant_node[BitSpace::_z] = NULL;
+    new_netlist->constant_net[BitSpace::_0] = NULL;
+    new_netlist->constant_net[BitSpace::_1] = NULL;
+    new_netlist->constant_net[BitSpace::_x] = NULL;
+    new_netlist->constant_net[BitSpace::_z] = NULL;
     new_netlist->top_input_nodes = NULL;
     new_netlist->num_top_input_nodes = 0;
     new_netlist->top_output_nodes = NULL;
@@ -1063,8 +1066,8 @@ void remove_fanout_pins_from_net(nnet_t* net, npin_t* /*pin*/, int id) {
 
 //   printf("printing the netlist : %s\n",name);
 //   /* gnd_node */
-//   node=netlist->gnd_node;
-//   net=netlist->zero_net;
+//   node=netlist->constant_node[BitSpace::_0];
+//   net=netlist->constant_net[BitSpace::_0];
 //   printf("--------gnd_node-------\n");
 //   printf(" unique_id: %ld   name: %s type: %ld\n",node->unique_id,node->name,node->type);
 //   printf(" num_input_pins: %ld  num_input_port_sizes: %ld",node->num_input_pins,node->num_input_port_sizes);
@@ -1100,8 +1103,8 @@ void remove_fanout_pins_from_net(nnet_t* net, npin_t* /*pin*/, int id) {
 //   }
 
 //    /* vcc_node */
-//   node=netlist->vcc_node;
-//   net=netlist->one_net;
+//   node=netlist->constant_node[BitSpace::_1];
+//   net=netlist->constant_net[BitSpace::_1];
 //   printf("\n--------vcc_node-------\n");
 //   printf(" unique_id: %ld   name: %s type: %ld\n",node->unique_id,node->name,node->type);
 //   printf(" num_input_pins: %ld  num_input_port_sizes: %ld",node->num_input_pins,node->num_input_port_sizes);
@@ -1136,8 +1139,8 @@ void remove_fanout_pins_from_net(nnet_t* net, npin_t* /*pin*/, int id) {
 //   }
 
 //   /* pad_node */
-//   node=netlist->pad_node;
-//   net=netlist->pad_net;
+//   node=netlist->constant_node[BitSpace::_z];
+//   net=netlist->constant_net[BitSpace::_z];
 //   printf("\n--------pad_node-------\n");
 //   printf(" unique_id: %ld   name: %s type: %ld\n",node->unique_id,node->name,node->type);
 //   printf(" num_input_pins: %ld  num_input_port_sizes: %ld",node->num_input_pins,node->num_input_port_sizes);

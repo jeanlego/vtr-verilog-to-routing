@@ -405,12 +405,12 @@ void split_adder_for_sub(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int
         for (i = 0; i < b; i++) {
             /* If the input pin of not gate connects to gnd, replacing the input pin and the not gate with vcc;
              * if the input pin of not gate connects to vcc, replacing the input pin and the not gate with gnd.*/
-            if (not_node[i]->input_pins[0]->net->driver_pin->node->type == GND_NODE) {
-                connect_nodes(netlist->vcc_node, 0, node[0], (lefta + i));
+            if (not_node[i]->input_pins[0]->net->driver_pin->node->const_value == BitSpace::_0) {
+                connect_nodes(netlist->constant_node[BitSpace::_1], 0, node[0], (lefta + i));
                 remove_fanout_pins_from_net(not_node[i]->input_pins[0]->net, not_node[i]->input_pins[0], not_node[i]->input_pins[0]->pin_net_idx);
                 free_nnode(not_node[i]);
-            } else if (not_node[i]->input_pins[0]->net->driver_pin->node->type == VCC_NODE) {
-                connect_nodes(netlist->gnd_node, 0, node[0], (lefta + i));
+            } else if (not_node[i]->input_pins[0]->net->driver_pin->node->const_value == BitSpace::_1) {
+                connect_nodes(netlist->constant_node[BitSpace::_0], 0, node[0], (lefta + i));
                 remove_fanout_pins_from_net(not_node[i]->input_pins[0]->net, not_node[i]->input_pins[0], not_node[i]->input_pins[0]->pin_net_idx);
                 free_nnode(not_node[i]);
             } else
@@ -425,12 +425,12 @@ void split_adder_for_sub(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int
             for (i = 0; i < num; i++) {
                 /* If the input pin of not gate connects to gnd, replacing the input pin and the not gate with vcc;
                  * if the input pin of not gate connects to vcc, replacing the input pin and the not gate with gnd.*/
-                if (not_node[i]->input_pins[0]->net->driver_pin->node->type == GND_NODE) {
-                    connect_nodes(netlist->vcc_node, 0, node[0], (sizea + i + 1));
+                if (not_node[i]->input_pins[0]->net->driver_pin->node->const_value == BitSpace::_0) {
+                    connect_nodes(netlist->constant_node[BitSpace::_1], 0, node[0], (sizea + i + 1));
                     remove_fanout_pins_from_net(not_node[i]->input_pins[0]->net, not_node[i]->input_pins[0], not_node[i]->input_pins[0]->pin_net_idx);
                     free_nnode(not_node[i]);
-                } else if (not_node[i]->input_pins[0]->net->driver_pin->node->type == VCC_NODE) {
-                    connect_nodes(netlist->gnd_node, 0, node[0], (sizea + i + 1));
+                } else if (not_node[i]->input_pins[0]->net->driver_pin->node->const_value == BitSpace::_1) {
+                    connect_nodes(netlist->constant_node[BitSpace::_0], 0, node[0], (sizea + i + 1));
                     remove_fanout_pins_from_net(not_node[i]->input_pins[0]->net, not_node[i]->input_pins[0], not_node[i]->input_pins[0]->pin_net_idx);
                     free_nnode(not_node[i]);
                 } else
@@ -445,14 +445,15 @@ void split_adder_for_sub(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int
 
             for (j = 0; j < num; j++) {
                 if (i == count - 1 && flag == 1) {
+                    nnode_t* cur_node = not_node[(i * sizeb + j - 1)]->input_pins[0]->net->driver_pin->node;
                     /* If the input pin of not gate connects to gnd, replacing the input pin and the not gate with vcc;
                      * if the input pin of not gate connects to vcc, replacing the input pin and the not gate with gnd.*/
-                    if (not_node[(i * sizeb + j - 1)]->input_pins[0]->net->driver_pin->node->type == GND_NODE) {
-                        connect_nodes(netlist->vcc_node, 0, node[i], (lefta + j));
+                    if (cur_node->const_value == BitSpace::_0) {
+                        connect_nodes(netlist->constant_node[BitSpace::_1], 0, node[i], (lefta + j));
                         remove_fanout_pins_from_net(not_node[(i * sizeb + j - 1)]->input_pins[0]->net, not_node[(i * sizeb + j - 1)]->input_pins[0], not_node[(i * sizeb + j - 1)]->input_pins[0]->pin_net_idx);
                         free_nnode(not_node[(i * sizeb + j - 1)]);
-                    } else if (not_node[(i * sizeb + j - 1)]->input_pins[0]->net->driver_pin->node->type == VCC_NODE) {
-                        connect_nodes(netlist->gnd_node, 0, node[i], (lefta + j));
+                    } else if (cur_node->const_value == BitSpace::_1) {
+                        connect_nodes(netlist->constant_node[BitSpace::_0], 0, node[i], (lefta + j));
                         remove_fanout_pins_from_net(not_node[(i * sizeb + j - 1)]->input_pins[0]->net, not_node[(i * sizeb + j - 1)]->input_pins[0], not_node[(i * sizeb + j - 1)]->input_pins[0]->pin_net_idx);
                         free_nnode(not_node[(i * sizeb + j - 1)]);
                     } else
@@ -461,12 +462,13 @@ void split_adder_for_sub(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int
                     /* If the input pin of not gate connects to gnd, replacing the input pin and the not gate with vcc;
                      * if the input pin of not gate connects to vcc, replacing the input pin and the not gate with gnd.*/
                     const int index = i * sizeb + j - offset;
-                    if (not_node[index]->input_pins[0]->net->driver_pin->node->type == GND_NODE) {
-                        connect_nodes(netlist->vcc_node, 0, node[i], (sizea + j));
+                    nnode_t* cur_node = not_node[index]->input_pins[0]->net->driver_pin->node;
+                    if (cur_node->const_value == BitSpace::_0) {
+                        connect_nodes(netlist->constant_node[BitSpace::_1], 0, node[i], (sizea + j));
                         remove_fanout_pins_from_net(not_node[index]->input_pins[0]->net, not_node[index]->input_pins[0], not_node[index]->input_pins[0]->pin_net_idx);
                         free_nnode(not_node[index]);
-                    } else if (not_node[index]->input_pins[0]->net->driver_pin->node->type == VCC_NODE) {
-                        connect_nodes(netlist->gnd_node, 0, node[i], (sizea + j));
+                    } else if (cur_node->const_value == BitSpace::_1) {
+                        connect_nodes(netlist->constant_node[BitSpace::_0], 0, node[i], (sizea + j));
                         remove_fanout_pins_from_net(not_node[index]->input_pins[0]->net, not_node[index]->input_pins[0], not_node[index]->input_pins[0]->pin_net_idx);
                         free_nnode(not_node[index]);
                     } else
@@ -478,8 +480,8 @@ void split_adder_for_sub(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int
 
     if ((flag == 0 || count > 1) && !configuration.adder_cin_global) {
         //connect the a[0] of first adder node to ground, and b[0] of first adder node to vcc
-        connect_nodes(netlist->gnd_node, 0, node[0], 0);
-        connect_nodes(netlist->vcc_node, 0, node[0], sizea);
+        connect_nodes(netlist->constant_node[BitSpace::_0], 0, node[0], 0);
+        connect_nodes(netlist->constant_node[BitSpace::_1], 0, node[0], sizea);
         //hang the first sumout
         node[0]->output_pins[1] = allocate_npin();
         node[0]->output_pins[1]->name = append_string("", "%s~dummy_output~%d~%d", node[0]->name, 0, 1);
@@ -487,9 +489,9 @@ void split_adder_for_sub(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int
 
     // connect the first cin pin to vcc or unconn depending on configuration
     if ((flag == 1 && count == 1) || configuration.adder_cin_global)
-        connect_nodes(netlist->vcc_node, 0, node[0], node[0]->num_input_pins - 1);
+        connect_nodes(netlist->constant_node[BitSpace::_1], 0, node[0], node[0]->num_input_pins - 1);
     else
-        connect_nodes(netlist->pad_node, 0, node[0], node[0]->num_input_pins - 1);
+        connect_nodes(netlist->constant_node[BitSpace::_z], 0, node[0], node[0]->num_input_pins - 1);
 
     //for normal subtraction: if any input pins beside intial cin is NULL, it should connect to unconn
     //for unary subtraction: the first number should has the number of a input pins connected to gnd. The others are as same as normal subtraction
@@ -498,9 +500,9 @@ void split_adder_for_sub(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int
         for (j = 0; j < num - 1; j++) {
             if (node[i]->input_pins[j] == NULL) {
                 if (nodeo->num_input_port_sizes != 3 && i * sizea + j < a)
-                    connect_nodes(netlist->gnd_node, 0, node[i], j);
+                    connect_nodes(netlist->constant_node[BitSpace::_0], 0, node[i], j);
                 else
-                    connect_nodes(netlist->pad_node, 0, node[i], j);
+                    connect_nodes(netlist->constant_node[BitSpace::_z], 0, node[i], j);
             }
         }
     }
@@ -548,8 +550,6 @@ void split_adder_for_sub(nnode_t* nodeo, int a, int b, int sizea, int sizeb, int
     node[count - 1]->output_pins[0] = allocate_npin();
     // Pad outputs with a unique and descriptive name to avoid collisions.
     node[count - 1]->output_pins[0]->name = append_string("", "%s~dummy_output~%d~%d", node[(count - 1)]->name, (count - 1), 0);
-    //connect_nodes(node[count - 1], (node[(count - 1)]->num_output_pins - 1), netlist->gnd_node, 0);
-    //}
 
     /* Probably more to do here in freeing the old node! */
     vtr::free(nodeo->name);

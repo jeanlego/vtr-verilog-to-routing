@@ -16,6 +16,7 @@ nnode_t* free_nnode(nnode_t* to_free);
 npin_t* free_npin(npin_t* to_free);
 nnet_t* free_nnet(nnet_t* to_free);
 
+npin_t* get_const_pin(netlist_t* netlist, BitSpace::bit_value_t constant);
 npin_t* get_zero_pin(netlist_t* netlist);
 npin_t* get_pad_pin(netlist_t* netlist);
 npin_t* get_one_pin(netlist_t* netlist);

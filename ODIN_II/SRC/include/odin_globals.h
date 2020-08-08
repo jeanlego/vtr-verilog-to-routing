@@ -26,16 +26,8 @@ extern nnode_t** top_input_nodes;
 extern long num_top_input_nodes;
 extern nnode_t** top_output_nodes;
 extern long num_top_output_nodes;
-extern nnode_t* gnd_node;
-extern nnode_t* vcc_node;
-extern nnode_t* pad_node;
 
-extern nnet_t* zero_net;
-extern nnet_t* one_net;
-extern nnet_t* pad_net;
-extern char* one_string;
-extern char* zero_string;
-extern char* pad_string;
+extern char* constant_string[];
 
 extern t_arch Arch;
 extern short physical_lut_size;

@@ -150,9 +150,7 @@ extern const char* ieee_std_STR[];
 
 extern const char* file_extension_supported_STR[];
 
-extern const char* ZERO_GND_ZERO;
-extern const char* ONE_VCC_CNS;
-extern const char* ZERO_PAD_ZERO;
+extern const char* constant_driver_STR[];
 
 extern const char* SINGLE_PORT_RAM_string;
 extern const char* DUAL_PORT_RAM_string;
@@ -204,8 +202,7 @@ enum operation_list {
     BUF_NODE,
     INPUT_NODE,
     OUTPUT_NODE,
-    GND_NODE,
-    VCC_NODE,
+    CONST_NODE,
     CLOCK_NODE,
     ADD,            // +
     MINUS,          // -
@@ -245,7 +242,6 @@ enum operation_list {
     BLIF_FUNCTION,
     NETLIST_FUNCTION,
     MEMORY,
-    PAD_NODE,
     HARD_IP,
     GENERIC,  /*added for the unknown node type */
     CLOG2,    // $clog2
@@ -494,6 +490,9 @@ struct nnode_t {
 
     //Generic gate output
     unsigned char generic_output; //describes the output (1 or 0) of generic blocks
+
+    /* for constant valued output node */
+    BitSpace::bit_value_t const_value = BitSpace::_x;
 };
 
 struct npin_t {
@@ -563,12 +562,9 @@ struct ast_t {
 struct netlist_t {
     char* identifier;
 
-    nnode_t* gnd_node;
-    nnode_t* vcc_node;
-    nnode_t* pad_node;
-    nnet_t* zero_net;
-    nnet_t* one_net;
-    nnet_t* pad_net;
+    nnode_t* constant_node[BitSpace::_size];
+    nnet_t* constant_net[BitSpace::_size];
+
     nnode_t** top_input_nodes;
     int num_top_input_nodes;
     nnode_t** top_output_nodes;

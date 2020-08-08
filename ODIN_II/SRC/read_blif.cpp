@@ -39,9 +39,13 @@
 #include "vtr_memory.h"
 
 #define TOKENS " \t\n"
-#define GND_NAME "gnd"
-#define VCC_NAME "vcc"
-#define HBPAD_NAME "unconn"
+
+const char* CONST_NAME[] = {
+    "gnd",
+    "vcc",
+    "dc",
+    "unconn",
+};
 
 #define READ_BLIF_BUFFER 1048576 // 1MB
 
@@ -96,7 +100,7 @@ int read_tokens(char* buffer, hard_block_models* models, FILE* file, Hashtable* 
 static void dum_parse(char* buffer, FILE* file);
 void create_internal_node_and_driver(FILE* file, Hashtable* output_nets_hash);
 operation_list assign_node_type_from_node_name(char* output_name); // function will decide the node->type of the given node
-operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FILE* file);
+void read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FILE* file);
 void create_latch_node_and_driver(FILE* file, Hashtable* output_nets_hash);
 void create_hard_block_nodes(hard_block_models* models, FILE* file, Hashtable* output_nets_hash);
 void hook_up_nets(Hashtable* output_nets_hash);
@@ -599,27 +603,22 @@ void create_internal_node_and_driver(FILE* file, Hashtable* output_nets_hash) {
     nnode_t* new_node = allocate_nnode(my_location);
     new_node->related_ast_node = NULL;
 
-    /* gnd vcc unconn already created as top module so ignore them */
+    /* consts already created as top module so ignore them */
     if (
-        !strcmp(names[input_count - 1], "gnd")
-        || !strcmp(names[input_count - 1], "vcc")
-        || !strcmp(names[input_count - 1], "unconn")) {
+        !strcmp(names[input_count - 1], CONST_NAME[BitSpace::_0])
+        || !strcmp(names[input_count - 1], CONST_NAME[BitSpace::_1])
+        || !strcmp(names[input_count - 1], CONST_NAME[BitSpace::_z])) {
         skip_reading_bit_map = true;
         free_nnode(new_node);
     } else {
         /* assign the node type by seeing the name */
-        operation_list node_type = (operation_list)assign_node_type_from_node_name(names[input_count - 1]);
-
-        if (node_type != GENERIC) {
-            new_node->type = node_type;
-            skip_reading_bit_map = true;
-        }
+        new_node->type = (operation_list)assign_node_type_from_node_name(names[input_count - 1]);
         /* Check for GENERIC type , change the node by reading the bit map */
-        else if (node_type == GENERIC) {
-            new_node->type = (operation_list)read_bit_map_find_unknown_gate(input_count - 1, new_node, file);
-            skip_reading_bit_map = true;
+        if (new_node->type == GENERIC) {
+            read_bit_map_find_unknown_gate(input_count - 1, new_node, file);
         }
 
+        skip_reading_bit_map = true;
         /* allocate the input pin (= input_count-1)*/
         if (input_count - 1 > 0) // check if there is any input pins
         {
@@ -646,22 +645,22 @@ void create_internal_node_and_driver(FILE* file, Hashtable* output_nets_hash) {
         }
 
         /* add information for the intermediate VCC and GND node (appears in ABC )*/
-        if (new_node->type == GND_NODE) {
+        if (new_node->const_value == BitSpace::_0) {
             allocate_more_input_pins(new_node, 1);
             add_input_port_information(new_node, 1);
 
             npin_t* new_pin = allocate_npin();
-            new_pin->name = vtr::strdup(GND_NAME);
+            new_pin->name = vtr::strdup(CONST_NAME[BitSpace::_0]);
             new_pin->type = INPUT;
             add_input_pin_to_node(new_node, new_pin, 0);
         }
 
-        if (new_node->type == VCC_NODE) {
+        if (new_node->const_value == BitSpace::_1) {
             allocate_more_input_pins(new_node, 1);
             add_input_port_information(new_node, 1);
 
             npin_t* new_pin = allocate_npin();
-            new_pin->name = vtr::strdup(VCC_NAME);
+            new_pin->name = vtr::strdup(CONST_NAME[BitSpace::_1]);
             new_pin->type = INPUT;
             add_input_pin_to_node(new_node, new_pin, 0);
         }
@@ -704,9 +703,7 @@ void create_internal_node_and_driver(FILE* file, Hashtable* output_nets_hash) {
  * function: read_bit_map_find_unknown_gate
  * read the bit map for simulation
  *-------------------------------------------------------------------------------------------*/
-operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FILE* file) {
-    operation_list to_return = operation_list_END;
-
+void read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FILE* file) {
     fpos_t pos;
     int last_line = my_location.line;
     const char* One = "1";
@@ -722,15 +719,16 @@ operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FI
         vtr::fgets(buffer, READ_BLIF_BUFFER, file);
         my_location.line += 1;
 
+        node->type = CONST_NODE;
         char* ptr = vtr::strtok(buffer, "\t\n", file, buffer);
         if (!ptr) {
-            to_return = GND_NODE;
+            node->const_value = BitSpace::_0;
         } else if (!strcmp(ptr, " 1")) {
-            to_return = VCC_NODE;
+            node->const_value = BitSpace::_1;
         } else if (!strcmp(ptr, " 0")) {
-            to_return = GND_NODE;
+            node->const_value = BitSpace::_0;
         } else {
-            to_return = VCC_NODE;
+            node->const_value = BitSpace::_1;
         }
     } else {
         while (1) {
@@ -761,12 +759,12 @@ operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FI
             if (line_count_bitmap == 1) {
                 // GT
                 if (!strcmp(bit_map[0], "100")) {
-                    to_return = GT;
+                    node->type = GT;
                 }
 
                 // LT
                 else if (!strcmp(bit_map[0], "010")) {
-                    to_return = LT;
+                    node->type = LT;
                 }
 
                 /* LOGICAL_AND and LOGICAL_NAND for ABC*/
@@ -777,25 +775,25 @@ operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FI
 
                     if (i == input_count) {
                         if (!strcmp(output_bit_map, "1")) {
-                            to_return = LOGICAL_AND;
+                            node->type = LOGICAL_AND;
                         } else if (!strcmp(output_bit_map, "0")) {
-                            to_return = LOGICAL_NAND;
+                            node->type = LOGICAL_NAND;
                         }
                     }
 
                     /* BITWISE_NOT */
-                    if (!strcmp(bit_map[0], "0") && to_return == operation_list_END) {
-                        to_return = BITWISE_NOT;
+                    if (!strcmp(bit_map[0], "0") && node->type == GENERIC) {
+                        node->type = BITWISE_NOT;
                     }
                     /* LOGICAL_NOR and LOGICAL_OR for ABC */
                     for (i = 0; i < input_count && bit_map[0][i] == '0'; i++)
                         ;
 
-                    if (i == input_count && to_return == operation_list_END) {
+                    if (i == input_count && node->type == GENERIC) {
                         if (!strcmp(output_bit_map, "1")) {
-                            to_return = LOGICAL_NOR;
+                            node->type = LOGICAL_NOR;
                         } else if (!strcmp(output_bit_map, "0")) {
-                            to_return = LOGICAL_OR;
+                            node->type = LOGICAL_OR;
                         }
                     }
                 }
@@ -804,11 +802,11 @@ operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FI
             else if (line_count_bitmap == 2) {
                 /* LOGICAL_XOR */
                 if ((strcmp(bit_map[0], "01") == 0) && (strcmp(bit_map[1], "10") == 0)) {
-                    to_return = LOGICAL_XOR;
+                    node->type = LOGICAL_XOR;
                 }
                 /* LOGICAL_XNOR */
                 else if ((strcmp(bit_map[0], "00") == 0) && (strcmp(bit_map[1], "11") == 0)) {
-                    to_return = LOGICAL_XNOR;
+                    node->type = LOGICAL_XNOR;
                 }
             } else if (line_count_bitmap == 4) {
                 /* ADDER_FUNC */
@@ -817,7 +815,7 @@ operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FI
                     && (!strcmp(bit_map[1], "010"))
                     && (!strcmp(bit_map[2], "100"))
                     && (!strcmp(bit_map[3], "111"))) {
-                    to_return = ADDER_FUNC;
+                    node->type = ADDER_FUNC;
                 }
                 /* CARRY_FUNC */
                 else if (
@@ -825,7 +823,7 @@ operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FI
                     && (!strcmp(bit_map[1], "101"))
                     && (!strcmp(bit_map[2], "110"))
                     && (!strcmp(bit_map[3], "111"))) {
-                    to_return = CARRY_FUNC;
+                    node->type = CARRY_FUNC;
                 }
                 /* LOGICAL_XOR */
                 else if (
@@ -833,7 +831,7 @@ operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FI
                     && (!strcmp(bit_map[1], "010"))
                     && (!strcmp(bit_map[2], "100"))
                     && (!strcmp(bit_map[3], "111"))) {
-                    to_return = LOGICAL_XOR;
+                    node->type = LOGICAL_XOR;
                 }
                 /* LOGICAL_XNOR */
                 else if (
@@ -841,11 +839,11 @@ operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FI
                     && (!strcmp(bit_map[1], "011"))
                     && (!strcmp(bit_map[2], "101"))
                     && (!strcmp(bit_map[3], "110"))) {
-                    to_return = LOGICAL_XNOR;
+                    node->type = LOGICAL_XNOR;
                 }
             }
 
-            if (line_count_bitmap == input_count && to_return == operation_list_END) {
+            if (line_count_bitmap == input_count && node->type == GENERIC) {
                 /* LOGICAL_OR */
                 int i;
                 for (i = 0; i < line_count_bitmap; i++) {
@@ -866,7 +864,7 @@ operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FI
                 }
 
                 if (i == line_count_bitmap) {
-                    to_return = LOGICAL_OR;
+                    node->type = LOGICAL_OR;
                 } else {
                     /* LOGICAL_NAND */
                     for (i = 0; i < line_count_bitmap; i++) {
@@ -887,13 +885,13 @@ operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FI
                     }
 
                     if (i == line_count_bitmap) {
-                        to_return = LOGICAL_NAND;
+                        node->type = LOGICAL_NAND;
                     }
                 }
             }
 
             /* MUX_2 */
-            if (line_count_bitmap * 2 == input_count && to_return == operation_list_END) {
+            if (line_count_bitmap * 2 == input_count && node->type == GENERIC) {
                 int i;
                 for (i = 0; i < line_count_bitmap; i++) {
                     if ((bit_map[i][i] == '1') && (bit_map[i][i + line_count_bitmap] == '1')) {
@@ -915,7 +913,7 @@ operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FI
                 }
 
                 if (i == line_count_bitmap) {
-                    to_return = MUX_2;
+                    node->type = MUX_2;
                 }
             }
         } else {
@@ -928,10 +926,9 @@ operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FI
         }
 
         /* assigning the bit_map to the node if it is GENERIC */
-        if (to_return == operation_list_END) {
+        if (node->type == GENERIC) {
             node->bit_map = bit_map;
             node->bit_map_line_count = line_count_bitmap;
-            to_return = GENERIC;
         }
     }
     if (output_bit_map) {
@@ -946,8 +943,6 @@ operation_list read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FI
 
     my_location.line = last_line;
     fsetpos(file, &pos);
-
-    return to_return;
 }
 
 /*
@@ -1083,50 +1078,53 @@ void rb_create_top_driver_nets(const char* instance_name_prefix, Hashtable* outp
 
     /* ZERO net */
     /* description given for the zero net is same for other two */
-    blif_netlist->zero_net = allocate_nnet();                  // allocate memory to net pointer
-    blif_netlist->gnd_node = allocate_nnode(unknown_location); // allocate memory to node pointer
-    blif_netlist->gnd_node->type = GND_NODE;                   // mark the type
-    allocate_more_output_pins(blif_netlist->gnd_node, 1);      // alloacate 1 output pin pointer to this node
-    add_output_port_information(blif_netlist->gnd_node, 1);    // add port info. this port has 1 pin ,till now number of port for this is one
+    blif_netlist->constant_net[BitSpace::_0] = allocate_nnet();                   // allocate memory to net pointer
+    blif_netlist->constant_node[BitSpace::_0] = allocate_nnode(unknown_location); // allocate memory to node pointer
+    blif_netlist->constant_node[BitSpace::_0]->type = CONST_NODE;                 // mark the type
+    blif_netlist->constant_node[BitSpace::_0]->const_value = BitSpace::_0;        // mark the type
+    allocate_more_output_pins(blif_netlist->constant_node[BitSpace::_0], 1);      // alloacate 1 output pin pointer to this node
+    add_output_port_information(blif_netlist->constant_node[BitSpace::_0], 1);    // add port info. this port has 1 pin ,till now number of port for this is one
     new_pin = allocate_npin();
-    add_output_pin_to_node(blif_netlist->gnd_node, new_pin, 0); // add this pin to output pin pointer array of this node
-    add_driver_pin_to_net(blif_netlist->zero_net, new_pin);     // add this pin to net as driver pin
+    add_output_pin_to_node(blif_netlist->constant_node[BitSpace::_0], new_pin, 0); // add this pin to output pin pointer array of this node
+    add_driver_pin_to_net(blif_netlist->constant_net[BitSpace::_0], new_pin);      // add this pin to net as driver pin
 
     /*ONE net*/
-    blif_netlist->one_net = allocate_nnet();
-    blif_netlist->vcc_node = allocate_nnode(unknown_location);
-    blif_netlist->vcc_node->type = VCC_NODE;
-    allocate_more_output_pins(blif_netlist->vcc_node, 1);
-    add_output_port_information(blif_netlist->vcc_node, 1);
+    blif_netlist->constant_net[BitSpace::_1] = allocate_nnet();
+    blif_netlist->constant_node[BitSpace::_1] = allocate_nnode(unknown_location);
+    blif_netlist->constant_node[BitSpace::_1]->type = CONST_NODE;
+    blif_netlist->constant_node[BitSpace::_1]->const_value = BitSpace::_1;
+    allocate_more_output_pins(blif_netlist->constant_node[BitSpace::_1], 1);
+    add_output_port_information(blif_netlist->constant_node[BitSpace::_1], 1);
     new_pin = allocate_npin();
-    add_output_pin_to_node(blif_netlist->vcc_node, new_pin, 0);
-    add_driver_pin_to_net(blif_netlist->one_net, new_pin);
+    add_output_pin_to_node(blif_netlist->constant_node[BitSpace::_1], new_pin, 0);
+    add_driver_pin_to_net(blif_netlist->constant_net[BitSpace::_1], new_pin);
 
     /* Pad net */
-    blif_netlist->pad_net = allocate_nnet();
-    blif_netlist->pad_node = allocate_nnode(unknown_location);
-    blif_netlist->pad_node->type = PAD_NODE;
-    allocate_more_output_pins(blif_netlist->pad_node, 1);
-    add_output_port_information(blif_netlist->pad_node, 1);
+    blif_netlist->constant_net[BitSpace::_z] = allocate_nnet();
+    blif_netlist->constant_node[BitSpace::_z] = allocate_nnode(unknown_location);
+    blif_netlist->constant_node[BitSpace::_z]->type = CONST_NODE;
+    blif_netlist->constant_node[BitSpace::_z]->const_value = BitSpace::_z;
+    allocate_more_output_pins(blif_netlist->constant_node[BitSpace::_z], 1);
+    add_output_port_information(blif_netlist->constant_node[BitSpace::_z], 1);
     new_pin = allocate_npin();
-    add_output_pin_to_node(blif_netlist->pad_node, new_pin, 0);
-    add_driver_pin_to_net(blif_netlist->pad_net, new_pin);
+    add_output_pin_to_node(blif_netlist->constant_node[BitSpace::_z], new_pin, 0);
+    add_driver_pin_to_net(blif_netlist->constant_net[BitSpace::_z], new_pin);
 
     /* CREATE the driver for the ZERO */
-    blif_netlist->zero_net->name = make_full_ref_name(instance_name_prefix, NULL, NULL, zero_string, -1);
-    output_nets_hash->add(GND_NAME, blif_netlist->zero_net);
+    blif_netlist->constant_net[BitSpace::_0]->name = make_full_ref_name(instance_name_prefix, NULL, NULL, constant_string[BitSpace::_0], -1);
+    output_nets_hash->add(CONST_NAME[BitSpace::_0], blif_netlist->constant_net[BitSpace::_0]);
 
     /* CREATE the driver for the ONE and store twice */
-    blif_netlist->one_net->name = make_full_ref_name(instance_name_prefix, NULL, NULL, one_string, -1);
-    output_nets_hash->add(VCC_NAME, blif_netlist->one_net);
+    blif_netlist->constant_net[BitSpace::_1]->name = make_full_ref_name(instance_name_prefix, NULL, NULL, constant_string[BitSpace::_1], -1);
+    output_nets_hash->add(CONST_NAME[BitSpace::_1], blif_netlist->constant_net[BitSpace::_1]);
 
     /* CREATE the driver for the PAD */
-    blif_netlist->pad_net->name = make_full_ref_name(instance_name_prefix, NULL, NULL, pad_string, -1);
-    output_nets_hash->add(HBPAD_NAME, blif_netlist->pad_net);
+    blif_netlist->constant_net[BitSpace::_z]->name = make_full_ref_name(instance_name_prefix, NULL, NULL, constant_string[BitSpace::_z], -1);
+    output_nets_hash->add(CONST_NAME[BitSpace::_z], blif_netlist->constant_net[BitSpace::_z]);
 
-    blif_netlist->vcc_node->name = vtr::strdup(VCC_NAME);
-    blif_netlist->gnd_node->name = vtr::strdup(GND_NAME);
-    blif_netlist->pad_node->name = vtr::strdup(HBPAD_NAME);
+    blif_netlist->constant_node[BitSpace::_1]->name = vtr::strdup(CONST_NAME[BitSpace::_1]);
+    blif_netlist->constant_node[BitSpace::_0]->name = vtr::strdup(CONST_NAME[BitSpace::_0]);
+    blif_netlist->constant_node[BitSpace::_z]->name = vtr::strdup(CONST_NAME[BitSpace::_z]);
 }
 
 /*---------------------------------------------------------------------------------------------

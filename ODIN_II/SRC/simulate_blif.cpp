@@ -623,7 +623,11 @@ static stages_t* simulate_first_cycle(netlist_t* netlist, int cycle, lines_t* l)
     }
 
     // Enqueue constant nodes.
-    nnode_t* constant_nodes[] = {netlist->gnd_node, netlist->vcc_node, netlist->pad_node};
+    nnode_t* constant_nodes[] = {
+        netlist->constant_node[BitSpace::_0],
+        netlist->constant_node[BitSpace::_1],
+        netlist->constant_node[BitSpace::_z],
+    };
     int num_constant_nodes = 3;
     for (i = 0; i < num_constant_nodes; i++) {
         if (is_node_ready(constant_nodes[i], cycle)) {
@@ -1026,18 +1030,13 @@ static bool compute_and_store_value(nnode_t* node, int cycle) {
             }
             break;
         }
-        case GND_NODE:
+        case CONST_NODE:
             verify_i_o_availabilty(node, -1, 1);
-            update_pin_value(node->output_pins[0], BitSpace::_0, cycle);
-            break;
-        case VCC_NODE:
-            verify_i_o_availabilty(node, -1, 1);
-            update_pin_value(node->output_pins[0], BitSpace::_1, cycle);
-            break;
-        case PAD_NODE:
-            verify_i_o_availabilty(node, -1, 1);
-            // TODO: this is 'Z' since it is unconn
-            update_pin_value(node->output_pins[0], BitSpace::_0, cycle);
+            if (node->const_value == BitSpace::_z) {
+                update_pin_value(node->output_pins[0], BitSpace::_0, cycle);
+            } else {
+                update_pin_value(node->output_pins[0], node->const_value, cycle);
+            }
             break;
         case INPUT_NODE:
             break;
@@ -1080,7 +1079,7 @@ static bool compute_and_store_value(nnode_t* node, int cycle) {
 
     // Count number of ones and toggles for coverage estimation
     bool covered = true;
-    bool skip_node_from_coverage = (type == INPUT_NODE || type == CLOCK_NODE || type == GND_NODE || type == VCC_NODE || type == PAD_NODE);
+    bool skip_node_from_coverage = (type == INPUT_NODE || type == CLOCK_NODE || type == CONST_NODE);
 
     if (!skip_node_from_coverage) {
         for (int i = 0; i < node->num_output_pins && covered; i++) {
@@ -1088,7 +1087,7 @@ static bool compute_and_store_value(nnode_t* node, int cycle) {
             BitSpace::bit_value_t last_pin_value = get_pin_value(node->output_pins[i], cycle - 1);
 
             // # of toggles
-            if ((pin_value != last_pin_value) && (!BitSpace::is_unk[last_pin_value])) {
+            if ((pin_value != last_pin_value) && (!BitSpace::is_unk[last_pin_value]) && (!BitSpace::is_unk[pin_value])) {
                 node->output_pins[i]->coverage++;
                 if (node->output_pins[i]->coverage < 2)
                     covered = false;
@@ -1558,13 +1557,13 @@ static void compute_add_node(nnode_t* node, int cycle) {
      */
     BitSpace::bit_value_t carry = get_pin_value(node->input_pins[node->input_port_sizes[0] + node->input_port_sizes[1]], cycle);
     // check if the cin == unconn
-    if (node->input_pins[node->input_port_sizes[0] + node->input_port_sizes[1]]->net->driver_pin->node->type == PAD_NODE) {
+    if (node->input_pins[node->input_port_sizes[0] + node->input_port_sizes[1]]->net->driver_pin->node->const_value == BitSpace::_z) {
         // if a[0] is connected to gnd
-        if (node->input_pins[0]->net->driver_pin->node->type == GND_NODE) {
+        if (node->input_pins[0]->net->driver_pin->node->const_value == BitSpace::_0) {
             // we connect the carry to have usefull output
-            if (node->input_pins[node->input_port_sizes[0]]->net->driver_pin->node->type == GND_NODE) {
+            if (node->input_pins[node->input_port_sizes[0]]->net->driver_pin->node->const_value == BitSpace::_0) {
                 carry = BitSpace::_0;
-            } else if (node->input_pins[node->input_port_sizes[0]]->net->driver_pin->node->type == VCC_NODE) {
+            } else if (node->input_pins[node->input_port_sizes[0]]->net->driver_pin->node->const_value == BitSpace::_1) {
                 carry = BitSpace::_1;
             }
         }
@@ -1600,11 +1599,11 @@ static void compute_unary_sub_node(nnode_t* node, int cycle) {
      */
     BitSpace::bit_value_t carry = get_pin_value(node->input_pins[node->input_port_sizes[0]], cycle);
     // check if the cin == unconn
-    if (node->input_pins[node->input_port_sizes[0]]->net->driver_pin->node->type == PAD_NODE) {
+    if (node->input_pins[node->input_port_sizes[0]]->net->driver_pin->node->const_value == BitSpace::_z) {
         // we connect the carry to have usefull output
-        if (node->input_pins[0]->net->driver_pin->node->type == GND_NODE) {
+        if (node->input_pins[0]->net->driver_pin->node->const_value == BitSpace::_0) {
             carry = BitSpace::_0;
-        } else if (node->input_pins[0]->net->driver_pin->node->type == VCC_NODE) {
+        } else if (node->input_pins[0]->net->driver_pin->node->const_value == BitSpace::_1) {
             carry = BitSpace::_1;
         }
     }

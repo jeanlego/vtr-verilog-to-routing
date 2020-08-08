@@ -640,23 +640,7 @@ char* get_name_of_pin_number(ast_node_t* var_node, int bit) {
         bit = 0;
 
     BitSpace::bit_value_t c = var_node->types.vnumber->get_bit_from_lsb(bit);
-    switch (c) {
-        case BitSpace::_1:
-            return_string = vtr::strdup(ONE_VCC_CNS);
-            break;
-        case BitSpace::_0:
-            return_string = vtr::strdup(ZERO_GND_ZERO);
-            break;
-        case BitSpace::_x:
-            return_string = vtr::strdup(ZERO_GND_ZERO);
-            break;
-        case BitSpace::_z:
-            return_string = vtr::strdup(ZERO_PAD_ZERO);
-            break;
-        default:
-            error_message(AST, var_node->loc, "Unrecognised character %c in binary string \"%s\"!\n", c, var_node->types.vnumber->to_vstring('B').c_str());
-            break;
-    }
+    return_string = vtr::strdup(constant_driver_STR[c]);
 
     return return_string;
 }

@@ -102,15 +102,15 @@ void traverse_forward(nnode_t* node, int toplevel, int remove_me) {
 
     if (node->type == ADD || node->type == MINUS) {
         // check if adders/subtractors are starting using a global gnd/vcc node or a pad node
-        auto ADDER_START_NODE = PAD_NODE;
+        BitSpace::bit_value_t adder_start_const = BitSpace::_z;
         if (configuration.adder_cin_global) {
             if (node->type == ADD)
-                ADDER_START_NODE = GND_NODE;
+                adder_start_const = BitSpace::_0;
             else
-                ADDER_START_NODE = VCC_NODE;
+                adder_start_const = BitSpace::_1;
         }
         /* Check if we've found the head of an adder or subtractor chain */
-        if (node->input_pins[node->num_input_pins - 1]->net->driver_pin->node->type == ADDER_START_NODE) {
+        if (node->input_pins[node->num_input_pins - 1]->net->driver_pin->node->const_value == adder_start_const) {
             addsub_list_next = insert_node_list(addsub_list_next, node);
         }
     }
@@ -152,9 +152,9 @@ void identify_unused_nodes(netlist_t* netlist) {
     addsub_nodes.node = NULL;
     addsub_nodes.next = NULL;
 
-    traverse_forward(netlist->gnd_node, true, false);
-    traverse_forward(netlist->vcc_node, true, false);
-    traverse_forward(netlist->pad_node, true, false);
+    traverse_forward(netlist->constant_node[BitSpace::_0], true, false);
+    traverse_forward(netlist->constant_node[BitSpace::_1], true, false);
+    traverse_forward(netlist->constant_node[BitSpace::_z], true, false);
     int i;
     for (i = 0; i < netlist->num_top_input_nodes; i++) {
         traverse_forward(netlist->top_input_nodes[i], true, false);
