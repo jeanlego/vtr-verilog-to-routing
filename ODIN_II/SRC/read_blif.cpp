@@ -592,6 +592,8 @@ void create_internal_node_and_driver(FILE* file, Hashtable* output_nets_hash) {
         names[input_count++] = vtr::strdup(ptr);
     }
 
+    skip_reading_bit_map = true;
+
     /* assigning the new_node */
     nnode_t* new_node = allocate_nnode(my_location);
     new_node->related_ast_node = NULL;
@@ -602,7 +604,6 @@ void create_internal_node_and_driver(FILE* file, Hashtable* output_nets_hash) {
         is_top_net = (0 == strcmp(names[input_count - 1], simulation_const_names[const_value]));
     }
     if (is_top_net) {
-        skip_reading_bit_map = true;
         free_nnode(new_node);
     } else {
         /* assign the node type by seeing the name */
@@ -612,68 +613,67 @@ void create_internal_node_and_driver(FILE* file, Hashtable* output_nets_hash) {
             read_bit_map_find_unknown_gate(input_count - 1, new_node, file);
         }
 
-        skip_reading_bit_map = true;
-        /* allocate the input pin (= input_count-1)*/
-        if (input_count - 1 > 0) // check if there is any input pins
-        {
-            allocate_more_input_pins(new_node, input_count - 1);
-
-            /* add the port information */
-            if (new_node->type == MUX_2) {
-                add_input_port_information(new_node, (input_count - 1) / 2);
-                add_input_port_information(new_node, (input_count - 1) / 2);
-            } else {
-                int i;
-                for (i = 0; i < input_count - 1; i++)
-                    add_input_port_information(new_node, 1);
-            }
-        }
-
-        /* add names and type information to the created input pins */
-        for (int i = 0; i <= input_count - 2; i++) {
-            npin_t* new_pin = allocate_npin();
-            new_pin->name = vtr::strdup(names[i]);
-            new_pin->type = INPUT;
-            add_input_pin_to_node(new_node, new_pin, i);
-        }
-
-        /* add information for the intermediate constant nodes*/
+        // this net will be added to the hash
         if (new_node->type == CONST_NODE) {
-            allocate_more_input_pins(new_node, 1);
-            add_input_port_information(new_node, 1);
+            /**
+             * we already have the net for these, we just need to add aliases
+             * the output is the alias for the constant
+             */
+            output_nets_hash->add(names[input_count - 1], blif_netlist->constant_net[new_node->const_value]);
+            free_nnode(new_node);
+
+        } else {
+            /* allocate the input pin (= input_count-1)*/
+            if (input_count - 1 > 0) // check if there is any input pins
+            {
+                allocate_more_input_pins(new_node, input_count - 1);
+
+                /* add the port information */
+                if (new_node->type == MUX_2) {
+                    add_input_port_information(new_node, (input_count - 1) / 2);
+                    add_input_port_information(new_node, (input_count - 1) / 2);
+                } else {
+                    int i;
+                    for (i = 0; i < input_count - 1; i++)
+                        add_input_port_information(new_node, 1);
+                }
+            }
+
+            /* add names and type information to the created input pins */
+            for (int i = 0; i <= input_count - 2; i++) {
+                npin_t* new_pin = allocate_npin();
+                new_pin->name = vtr::strdup(names[i]);
+                new_pin->type = INPUT;
+                add_input_pin_to_node(new_node, new_pin, i);
+            }
+
+            /* allocate the output pin (there is always one output pin) */
+            allocate_more_output_pins(new_node, 1);
+            add_output_port_information(new_node, 1);
+
+            /* add a name for the node, keeping the name of the node same as the output */
+            new_node->name = vtr::strdup(names[input_count - 1]);
+
+            /*add this node to blif_netlist as an internal node */
+            blif_netlist->internal_nodes = (nnode_t**)vtr::realloc(blif_netlist->internal_nodes, sizeof(nnode_t*) * (blif_netlist->num_internal_nodes + 1));
+            blif_netlist->internal_nodes[blif_netlist->num_internal_nodes++] = new_node;
+
+            /*add name information and a net(driver) for the output */
 
             npin_t* new_pin = allocate_npin();
-            new_pin->name = vtr::strdup(simulation_const_names[new_node->const_value]);
-            new_pin->type = INPUT;
-            add_input_pin_to_node(new_node, new_pin, 0);
+            new_pin->name = new_node->name;
+            new_pin->type = OUTPUT;
+
+            add_output_pin_to_node(new_node, new_pin, 0);
+
+            nnet_t* new_net = allocate_nnet();
+            new_net->name = new_node->name;
+
+            add_driver_pin_to_net(new_net, new_pin);
+            output_nets_hash->add(new_node->name, new_net);
         }
-
-        /* allocate the output pin (there is always one output pin) */
-        allocate_more_output_pins(new_node, 1);
-        add_output_port_information(new_node, 1);
-
-        /* add a name for the node, keeping the name of the node same as the output */
-        new_node->name = vtr::strdup(names[input_count - 1]);
-
-        /*add this node to blif_netlist as an internal node */
-        blif_netlist->internal_nodes = (nnode_t**)vtr::realloc(blif_netlist->internal_nodes, sizeof(nnode_t*) * (blif_netlist->num_internal_nodes + 1));
-        blif_netlist->internal_nodes[blif_netlist->num_internal_nodes++] = new_node;
-
-        /*add name information and a net(driver) for the output */
-
-        npin_t* new_pin = allocate_npin();
-        new_pin->name = new_node->name;
-        new_pin->type = OUTPUT;
-
-        add_output_pin_to_node(new_node, new_pin, 0);
-
-        nnet_t* new_net = allocate_nnet();
-        new_net->name = new_node->name;
-
-        add_driver_pin_to_net(new_net, new_pin);
-
-        output_nets_hash->add(new_node->name, new_net);
     }
+
     /* Free the char** names */
     for (int i = 0; i < input_count; i++)
         vtr::free(names[i]);

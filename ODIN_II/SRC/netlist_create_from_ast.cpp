@@ -3379,19 +3379,10 @@ signal_list_t* create_operation_node(ast_node_t* op, signal_list_t** input_lists
         case GTE:           // >=
         {
             if (input_lists[0]->count != input_lists[1]->count) {
-                int index_of_smallest;
-
-                /*if (op->num_children != 0 && op->children[0]->type == NUMBERS && op->children[1]->type == NUMBERS)
-                 * {
-                 * if (input_lists[0]->count < input_lists[1]->count)
-                 * index_of_smallest = 0;
-                 * else
-                 * index_of_smallest = 1;
-                 * }
-                 *
-                 * else*/
-                index_of_smallest = find_smallest_non_numerical(op, input_lists, 2);
-
+                int index_of_smallest = find_smallest_non_numerical(op, input_lists, 2);
+                if (index_of_smallest >= list_size || index_of_smallest < 0) {
+                    error_message(NETLIST, op->loc, "%s", "all numbers in padding non numericals\n");
+                }
                 input_port_width = input_lists[index_of_smallest]->count;
 
                 /* pad the input lists */
@@ -4052,9 +4043,9 @@ int find_smallest_non_numerical(ast_node_t* node, signal_list_t** input_list, in
     int smallest = -1;
     int smallest_idx = -1;
     short* tested = (short*)vtr::calloc(sizeof(short), num_input_lists);
-    short is_numerical = false;
+    short is_numerical = true;
 
-    while (is_numerical == true) {
+    while (is_numerical) {
         smallest_idx = -1;
         smallest = -1;
 
