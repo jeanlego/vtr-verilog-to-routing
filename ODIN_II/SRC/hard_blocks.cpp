@@ -31,6 +31,7 @@
 #include "netlist_utils.h"
 #include "hard_blocks.h"
 #include "memories.h"
+#include "vtr_util.h"
 
 STRING_CACHE* hard_block_names = NULL;
 
@@ -144,10 +145,7 @@ void define_hard_block(nnode_t* node, FILE* out) {
     port = index = 0;
     for (i = 0; i < node->num_input_pins; i++) {
         /* Check that the input pin is driven */
-        if (node->input_pins[i]->net->driver_pin == NULL
-            && node->input_pins[i]->net != verilog_netlist->constant_net[BitSpace::_0]
-            && node->input_pins[i]->net != verilog_netlist->constant_net[BitSpace::_1]
-            && node->input_pins[i]->net != verilog_netlist->constant_net[BitSpace::_z]) {
+        if (node->input_pins[i]->net->driver_pin == NULL) {
             warning_message(NETLIST, node->loc, "Signal %s is not driven. padding with ground\n", node->input_pins[i]->name);
             add_fanout_pin_to_net(verilog_netlist->constant_net[BitSpace::_0], node->input_pins[i]);
         }
@@ -267,7 +265,7 @@ void instantiate_hard_block(nnode_t* node, short mark, netlist_t* /*netlist*/) {
     /* Give names to the output pins */
     for (i = 0; i < node->num_output_pins; i++) {
         if (node->output_pins[i]->name == NULL)
-            node->output_pins[i]->name = make_full_ref_name(node->name, NULL, NULL, node->output_pins[i]->mapping, -1);
+            node->output_pins[i]->name = vtr::strdup(node->output_pins[i]->mapping);
 
         index++;
         if (node->output_port_sizes[port] == index) {

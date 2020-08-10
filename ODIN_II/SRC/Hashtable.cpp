@@ -59,3 +59,12 @@ void* Hashtable::get(std::string key) {
 bool Hashtable::is_empty() {
     return (my_map.size() == 0);
 }
+
+void Hashtable::print_hash() {
+    for (const auto& kv_items : this->my_map) {
+        printf("\n [%50s] = %p", kv_items.first.c_str(), kv_items.second);
+    }
+    printf("\n");
+
+    fflush(stdout);
+}

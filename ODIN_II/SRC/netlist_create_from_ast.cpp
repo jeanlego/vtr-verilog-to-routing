@@ -65,9 +65,6 @@ signal_list_t* local_clock_list;
 short local_clock_found;
 int local_clock_idx;
 
-/* CONSTANT NET ELEMENTS */
-char* constant_string[BitSpace::_size];
-
 netlist_t* verilog_netlist;
 
 circuit_type_e type_of_circuit;
@@ -761,7 +758,6 @@ void create_top_driver_nets(ast_node_t* module, char* instance_name_prefix, sc_h
     ast_node_t** local_symbol_table = local_ref->local_symbol_table;
     long num_local_symbol_table = local_ref->num_local_symbol_table;
     ast_node_t* module_items = module->children[2];
-    npin_t* new_pin;
 
     oassert(module_items->type == MODULE_ITEMS);
 
@@ -776,75 +772,18 @@ void create_top_driver_nets(ast_node_t* module, char* instance_name_prefix, sc_h
         error_message(NETLIST, module_items->loc, "%s", "Module is empty\n");
     }
 
-    /* create the constant nets */
-    verilog_netlist->constant_net[BitSpace::_0] = allocate_nnet();
-    verilog_netlist->constant_node[BitSpace::_0] = allocate_nnode(module->loc);
-    verilog_netlist->constant_node[BitSpace::_0]->type = CONST_NODE;
-    verilog_netlist->constant_node[BitSpace::_0]->const_value = BitSpace::_0;
-    allocate_more_output_pins(verilog_netlist->constant_node[BitSpace::_0], 1);
-    add_output_port_information(verilog_netlist->constant_node[BitSpace::_0], 1);
-    new_pin = allocate_npin();
-    add_output_pin_to_node(verilog_netlist->constant_node[BitSpace::_0], new_pin, 0);
-    add_driver_pin_to_net(verilog_netlist->constant_net[BitSpace::_0], new_pin);
+    for (BitSpace::bit_value_t const_driver = BitSpace::_start; const_driver < BitSpace::_size; const_driver += 1) {
+        nnode_t* const_node = create_constant_driver_node(const_driver, net_constant_STR[const_driver], module->loc);
+        verilog_netlist->constant_node[const_driver] = const_node;
+        verilog_netlist->constant_net[const_driver] = const_node->output_pins[0]->net;
 
-    verilog_netlist->constant_net[BitSpace::_1] = allocate_nnet();
-    verilog_netlist->constant_node[BitSpace::_1] = allocate_nnode(module->loc);
-    verilog_netlist->constant_node[BitSpace::_1]->type = CONST_NODE;
-    verilog_netlist->constant_node[BitSpace::_1]->const_value = BitSpace::_1;
-    allocate_more_output_pins(verilog_netlist->constant_node[BitSpace::_1], 1);
-    add_output_port_information(verilog_netlist->constant_node[BitSpace::_1], 1);
-    new_pin = allocate_npin();
-    add_output_pin_to_node(verilog_netlist->constant_node[BitSpace::_1], new_pin, 0);
-    add_driver_pin_to_net(verilog_netlist->constant_net[BitSpace::_1], new_pin);
-
-    verilog_netlist->constant_net[BitSpace::_z] = allocate_nnet();
-    verilog_netlist->constant_node[BitSpace::_z] = allocate_nnode(module->loc);
-    verilog_netlist->constant_node[BitSpace::_z]->type = CONST_NODE;
-    verilog_netlist->constant_node[BitSpace::_z]->const_value = BitSpace::_z;
-    allocate_more_output_pins(verilog_netlist->constant_node[BitSpace::_z], 1);
-    add_output_port_information(verilog_netlist->constant_node[BitSpace::_z], 1);
-    new_pin = allocate_npin();
-    add_output_pin_to_node(verilog_netlist->constant_node[BitSpace::_z], new_pin, 0);
-    add_driver_pin_to_net(verilog_netlist->constant_net[BitSpace::_z], new_pin);
-
-    /* CREATE the driver for the ZERO */
-    verilog_netlist->constant_node[BitSpace::_0]->name = make_full_ref_name(instance_name_prefix, NULL, NULL, constant_string[BitSpace::_0], -1);
-    vtr::free(constant_string[BitSpace::_0]);
-    constant_string[BitSpace::_0] = verilog_netlist->constant_node[BitSpace::_0]->name;
-
-    sc_spot = sc_add_string(output_nets_sc, constant_string[BitSpace::_0]);
-    if (output_nets_sc->data[sc_spot] != NULL) {
-        error_message(NETLIST, module_items->loc, "%s", "Error in Odin\n");
+        sc_spot = sc_add_string(output_nets_sc, net_constant_STR[const_driver]);
+        if (output_nets_sc->data[sc_spot] != NULL) {
+            error_message(NETLIST, module_items->loc, "%s", "Error in Odin\n");
+        }
+        /* store the data which is an idx here */
+        output_nets_sc->data[sc_spot] = (void*)verilog_netlist->constant_net[const_driver];
     }
-    /* store the data which is an idx here */
-    output_nets_sc->data[sc_spot] = (void*)verilog_netlist->constant_net[BitSpace::_0];
-    verilog_netlist->constant_net[BitSpace::_0]->name = constant_string[BitSpace::_0];
-
-    /* CREATE the driver for the ONE and store twice */
-    verilog_netlist->constant_node[BitSpace::_1]->name = make_full_ref_name(instance_name_prefix, NULL, NULL, constant_string[BitSpace::_1], -1);
-    vtr::free(constant_string[BitSpace::_1]);
-    constant_string[BitSpace::_1] = verilog_netlist->constant_node[BitSpace::_1]->name;
-
-    sc_spot = sc_add_string(output_nets_sc, constant_string[BitSpace::_1]);
-    if (output_nets_sc->data[sc_spot] != NULL) {
-        error_message(NETLIST, module_items->loc, "%s", "Error in Odin\n");
-    }
-    /* store the data which is an idx here */
-    output_nets_sc->data[sc_spot] = (void*)verilog_netlist->constant_net[BitSpace::_1];
-    verilog_netlist->constant_net[BitSpace::_1]->name = constant_string[BitSpace::_1];
-
-    /* CREATE the driver for the PAD */
-    verilog_netlist->constant_node[BitSpace::_z]->name = make_full_ref_name(instance_name_prefix, NULL, NULL, constant_string[BitSpace::_z], -1);
-    vtr::free(constant_string[BitSpace::_z]);
-    constant_string[BitSpace::_z] = verilog_netlist->constant_node[BitSpace::_z]->name;
-
-    sc_spot = sc_add_string(output_nets_sc, constant_string[BitSpace::_z]);
-    if (output_nets_sc->data[sc_spot] != NULL) {
-        error_message(NETLIST, module_items->loc, "%s", "Error in Odin\n");
-    }
-    /* store the data which is an idx here */
-    output_nets_sc->data[sc_spot] = (void*)verilog_netlist->constant_net[BitSpace::_z];
-    verilog_netlist->constant_net[BitSpace::_z]->name = constant_string[BitSpace::_z];
 }
 
 /*---------------------------------------------------------------------------------------------
@@ -1824,46 +1763,49 @@ void connect_module_instantiation_and_alias(short PASS, ast_node_t* module_insta
                     }
 
                     /* CMM - Check if this pin should be driven by the top level constant drivers	*/
-                    if (strstr(full_name, constant_driver_STR[BitSpace::_1])) {
-                        join_nets(verilog_netlist->constant_net[BitSpace::_1], (nnet_t*)input_nets_sc->data[sc_spot_input_old]);
-                        free_nnet((nnet_t*)input_nets_sc->data[sc_spot_input_old]);
-                        input_nets_sc->data[sc_spot_input_old] = (void*)verilog_netlist->constant_net[BitSpace::_1];
-                    } else if (strstr(full_name, constant_driver_STR[BitSpace::_0])) {
-                        join_nets(verilog_netlist->constant_net[BitSpace::_0], (nnet_t*)input_nets_sc->data[sc_spot_input_old]);
-                        free_nnet((nnet_t*)input_nets_sc->data[sc_spot_input_old]);
-                        input_nets_sc->data[sc_spot_input_old] = (void*)verilog_netlist->constant_net[BitSpace::_0];
-                    }
-                    /* check if the instantiation pin exists. */
-                    else if ((sc_spot_output = sc_lookup_string(output_nets_sc, full_name)) == -1) {
-                        /* IF - no driver, then assume that it needs to be aliased to move up as an input */
-                        if ((sc_spot_input_new = sc_lookup_string(input_nets_sc, full_name)) == -1) {
-                            /* if this input is not yet used in this module then we'll add it */
-                            sc_spot_input_new = sc_add_string(input_nets_sc, full_name);
-
-                            /* copy the pin to the old spot */
-                            input_nets_sc->data[sc_spot_input_new] = input_nets_sc->data[sc_spot_input_old];
-                        } else {
-                            /* already exists so we'll join the nets */
-                            combine_nets((nnet_t*)input_nets_sc->data[sc_spot_input_old], (nnet_t*)input_nets_sc->data[sc_spot_input_new], verilog_netlist);
-                            input_nets_sc->data[sc_spot_input_old] = NULL;
+                    bool found = false;
+                    for (BitSpace::bit_value_t const_driver = BitSpace::_start; !found && const_driver < BitSpace::_size; const_driver += 1) {
+                        if (strstr(full_name, constant_driver_STR[const_driver])) {
+                            join_nets(verilog_netlist->constant_net[const_driver], (nnet_t*)input_nets_sc->data[sc_spot_input_old]);
+                            free_nnet((nnet_t*)input_nets_sc->data[sc_spot_input_old]);
+                            input_nets_sc->data[sc_spot_input_old] = (void*)verilog_netlist->constant_net[const_driver];
+                            found = true;
                         }
-                    } else {
-                        /* ELSE - we've found a matching net, so add this pin to the net */
-                        nnet_t* net = (nnet_t*)output_nets_sc->data[sc_spot_output];
-                        nnet_t* in_net = (nnet_t*)input_nets_sc->data[sc_spot_input_old];
+                    }
 
-                        if ((net != in_net) && (net->combined == true)) {
-                            /* if they haven't been combined already, then join the inputs and output */
-                            join_nets(net, in_net);
-                            in_net = free_nnet(in_net);
-                            /* since the driver net is deleted, copy the spot of the in_net over */
-                            input_nets_sc->data[sc_spot_input_old] = (void*)net;
-                        } else if ((net != in_net) && (net->combined == false)) {
-                            /* if they haven't been combined already, then join the inputs and output */
-                            combine_nets(net, in_net, verilog_netlist);
-                            net = NULL;
-                            /* since the driver net is deleted, copy the spot of the in_net over */
-                            output_nets_sc->data[sc_spot_output] = (void*)in_net;
+                    /* check if the instantiation pin exists. */
+                    if (!found) {
+                        if ((sc_spot_output = sc_lookup_string(output_nets_sc, full_name)) == -1) {
+                            /* IF - no driver, then assume that it needs to be aliased to move up as an input */
+                            if ((sc_spot_input_new = sc_lookup_string(input_nets_sc, full_name)) == -1) {
+                                /* if this input is not yet used in this module then we'll add it */
+                                sc_spot_input_new = sc_add_string(input_nets_sc, full_name);
+
+                                /* copy the pin to the old spot */
+                                input_nets_sc->data[sc_spot_input_new] = input_nets_sc->data[sc_spot_input_old];
+                            } else {
+                                /* already exists so we'll join the nets */
+                                combine_nets((nnet_t*)input_nets_sc->data[sc_spot_input_old], (nnet_t*)input_nets_sc->data[sc_spot_input_new], verilog_netlist);
+                                input_nets_sc->data[sc_spot_input_old] = NULL;
+                            }
+                        } else {
+                            /* ELSE - we've found a matching net, so add this pin to the net */
+                            nnet_t* net = (nnet_t*)output_nets_sc->data[sc_spot_output];
+                            nnet_t* in_net = (nnet_t*)input_nets_sc->data[sc_spot_input_old];
+
+                            if ((net != in_net) && (net->combined == true)) {
+                                /* if they haven't been combined already, then join the inputs and output */
+                                join_nets(net, in_net);
+                                in_net = free_nnet(in_net);
+                                /* since the driver net is deleted, copy the spot of the in_net over */
+                                input_nets_sc->data[sc_spot_input_old] = (void*)net;
+                            } else if ((net != in_net) && (net->combined == false)) {
+                                /* if they haven't been combined already, then join the inputs and output */
+                                combine_nets(net, in_net, verilog_netlist);
+                                net = NULL;
+                                /* since the driver net is deleted, copy the spot of the in_net over */
+                                output_nets_sc->data[sc_spot_output] = (void*)in_net;
+                            }
                         }
                     }
 
@@ -2126,46 +2068,48 @@ signal_list_t* connect_function_instantiation_and_alias(short PASS, ast_node_t* 
 
                 } else {
                     /* CMM - Check if this pin should be driven by the top level VCC or GND drivers	*/
-                    if (strstr(full_name, constant_driver_STR[BitSpace::_1])) {
-                        join_nets(verilog_netlist->constant_net[BitSpace::_1], (nnet_t*)input_nets_sc->data[sc_spot_input_old]);
-                        free_nnet((nnet_t*)input_nets_sc->data[sc_spot_input_old]);
-                        input_nets_sc->data[sc_spot_input_old] = (void*)verilog_netlist->constant_net[BitSpace::_1];
-                    } else if (strstr(full_name, constant_driver_STR[BitSpace::_0])) {
-                        join_nets(verilog_netlist->constant_net[BitSpace::_0], (nnet_t*)input_nets_sc->data[sc_spot_input_old]);
-                        free_nnet((nnet_t*)input_nets_sc->data[sc_spot_input_old]);
-                        input_nets_sc->data[sc_spot_input_old] = (void*)verilog_netlist->constant_net[BitSpace::_0];
-                    }
-                    /* check if the instantiation pin exists. */
-                    else if ((sc_spot_output = sc_lookup_string(output_nets_sc, full_name)) == -1) {
-                        /* IF - no driver, then assume that it needs to be aliased to move up as an input */
-                        if ((sc_spot_input_new = sc_lookup_string(input_nets_sc, full_name)) == -1) {
-                            /* if this input is not yet used in this module then we'll add it */
-                            sc_spot_input_new = sc_add_string(input_nets_sc, full_name);
-
-                            /* copy the pin to the old spot */
-                            input_nets_sc->data[sc_spot_input_new] = input_nets_sc->data[sc_spot_input_old];
-                        } else {
-                            /* already exists so we'll join the nets */
-                            combine_nets((nnet_t*)input_nets_sc->data[sc_spot_input_old], (nnet_t*)input_nets_sc->data[sc_spot_input_new], verilog_netlist);
-                            input_nets_sc->data[sc_spot_input_old] = NULL;
+                    bool found = false;
+                    for (BitSpace::bit_value_t const_driver = BitSpace::_start; !found && const_driver < BitSpace::_size; const_driver += 1) {
+                        if (strstr(full_name, constant_driver_STR[const_driver])) {
+                            join_nets(verilog_netlist->constant_net[const_driver], (nnet_t*)input_nets_sc->data[sc_spot_input_old]);
+                            free_nnet((nnet_t*)input_nets_sc->data[sc_spot_input_old]);
+                            input_nets_sc->data[sc_spot_input_old] = (void*)verilog_netlist->constant_net[const_driver];
                         }
-                    } else {
-                        /* ELSE - we've found a matching net, so add this pin to the net */
-                        nnet_t* net = (nnet_t*)output_nets_sc->data[sc_spot_output];
-                        nnet_t* in_net = (nnet_t*)input_nets_sc->data[sc_spot_input_old];
+                    }
 
-                        if ((net != in_net) && (net->combined == true)) {
-                            /* if they haven't been combined already, then join the inputs and output */
-                            join_nets(net, in_net);
-                            in_net = free_nnet(in_net);
-                            /* since the driver net is deleted, copy the spot of the in_net over */
-                            input_nets_sc->data[sc_spot_input_old] = (void*)net;
-                        } else if ((net != in_net) && (net->combined == false)) {
-                            /* if they haven't been combined already, then join the inputs and output */
-                            combine_nets(net, in_net, verilog_netlist);
-                            net = NULL;
-                            /* since the driver net is deleted, copy the spot of the in_net over */
-                            output_nets_sc->data[sc_spot_output] = (void*)in_net;
+                    if (!found) {
+                        /* check if the instantiation pin exists. */
+                        if ((sc_spot_output = sc_lookup_string(output_nets_sc, full_name)) == -1) {
+                            /* IF - no driver, then assume that it needs to be aliased to move up as an input */
+                            if ((sc_spot_input_new = sc_lookup_string(input_nets_sc, full_name)) == -1) {
+                                /* if this input is not yet used in this module then we'll add it */
+                                sc_spot_input_new = sc_add_string(input_nets_sc, full_name);
+
+                                /* copy the pin to the old spot */
+                                input_nets_sc->data[sc_spot_input_new] = input_nets_sc->data[sc_spot_input_old];
+                            } else {
+                                /* already exists so we'll join the nets */
+                                combine_nets((nnet_t*)input_nets_sc->data[sc_spot_input_old], (nnet_t*)input_nets_sc->data[sc_spot_input_new], verilog_netlist);
+                                input_nets_sc->data[sc_spot_input_old] = NULL;
+                            }
+                        } else {
+                            /* ELSE - we've found a matching net, so add this pin to the net */
+                            nnet_t* net = (nnet_t*)output_nets_sc->data[sc_spot_output];
+                            nnet_t* in_net = (nnet_t*)input_nets_sc->data[sc_spot_input_old];
+
+                            if ((net != in_net) && (net->combined == true)) {
+                                /* if they haven't been combined already, then join the inputs and output */
+                                join_nets(net, in_net);
+                                in_net = free_nnet(in_net);
+                                /* since the driver net is deleted, copy the spot of the in_net over */
+                                input_nets_sc->data[sc_spot_input_old] = (void*)net;
+                            } else if ((net != in_net) && (net->combined == false)) {
+                                /* if they haven't been combined already, then join the inputs and output */
+                                combine_nets(net, in_net, verilog_netlist);
+                                net = NULL;
+                                /* since the driver net is deleted, copy the spot of the in_net over */
+                                output_nets_sc->data[sc_spot_output] = (void*)in_net;
+                            }
                         }
                     }
                 }
@@ -2428,46 +2372,47 @@ signal_list_t* connect_task_instantiation_and_alias(short PASS, ast_node_t* task
 
                 } else {
                     /* CMM - Check if this pin should be driven by the top level VCC or GND drivers	*/
-                    if (strstr(full_name, constant_driver_STR[BitSpace::_1])) {
-                        join_nets(verilog_netlist->constant_net[BitSpace::_1], (nnet_t*)input_nets_sc->data[sc_spot_input_old]);
-                        free_nnet((nnet_t*)input_nets_sc->data[sc_spot_input_old]);
-                        input_nets_sc->data[sc_spot_input_old] = (void*)verilog_netlist->constant_net[BitSpace::_1];
-                    } else if (strstr(full_name, constant_driver_STR[BitSpace::_0])) {
-                        join_nets(verilog_netlist->constant_net[BitSpace::_0], (nnet_t*)input_nets_sc->data[sc_spot_input_old]);
-                        free_nnet((nnet_t*)input_nets_sc->data[sc_spot_input_old]);
-                        input_nets_sc->data[sc_spot_input_old] = (void*)verilog_netlist->constant_net[BitSpace::_0];
+                    bool found = false;
+                    for (BitSpace::bit_value_t const_driver = BitSpace::_start; !found && const_driver < BitSpace::_size; const_driver += 1) {
+                        if (strstr(full_name, constant_driver_STR[const_driver])) {
+                            join_nets(verilog_netlist->constant_net[const_driver], (nnet_t*)input_nets_sc->data[sc_spot_input_old]);
+                            free_nnet((nnet_t*)input_nets_sc->data[sc_spot_input_old]);
+                            input_nets_sc->data[sc_spot_input_old] = (void*)verilog_netlist->constant_net[const_driver];
+                        }
                     }
                     /* check if the instantiation pin exists. */
-                    else if ((sc_spot_output = sc_lookup_string(output_nets_sc, full_name)) == -1) {
-                        /* IF - no driver, then assume that it needs to be aliased to move up as an input */
-                        if ((sc_spot_input_new = sc_lookup_string(input_nets_sc, full_name)) == -1) {
-                            /* if this input is not yet used in this task then we'll add it */
-                            sc_spot_input_new = sc_add_string(input_nets_sc, full_name);
+                    if (!found) {
+                        if ((sc_spot_output = sc_lookup_string(output_nets_sc, full_name)) == -1) {
+                            /* IF - no driver, then assume that it needs to be aliased to move up as an input */
+                            if ((sc_spot_input_new = sc_lookup_string(input_nets_sc, full_name)) == -1) {
+                                /* if this input is not yet used in this task then we'll add it */
+                                sc_spot_input_new = sc_add_string(input_nets_sc, full_name);
 
-                            /* copy the pin to the old spot */
-                            input_nets_sc->data[sc_spot_input_new] = input_nets_sc->data[sc_spot_input_old];
+                                /* copy the pin to the old spot */
+                                input_nets_sc->data[sc_spot_input_new] = input_nets_sc->data[sc_spot_input_old];
+                            } else {
+                                /* already exists so we'll join the nets */
+                                combine_nets((nnet_t*)input_nets_sc->data[sc_spot_input_old], (nnet_t*)input_nets_sc->data[sc_spot_input_new], verilog_netlist);
+                                input_nets_sc->data[sc_spot_input_old] = NULL;
+                            }
                         } else {
-                            /* already exists so we'll join the nets */
-                            combine_nets((nnet_t*)input_nets_sc->data[sc_spot_input_old], (nnet_t*)input_nets_sc->data[sc_spot_input_new], verilog_netlist);
-                            input_nets_sc->data[sc_spot_input_old] = NULL;
-                        }
-                    } else {
-                        /* ELSE - we've found a matching net, so add this pin to the net */
-                        nnet_t* net = (nnet_t*)output_nets_sc->data[sc_spot_output];
-                        nnet_t* in_net = (nnet_t*)input_nets_sc->data[sc_spot_input_old];
+                            /* ELSE - we've found a matching net, so add this pin to the net */
+                            nnet_t* net = (nnet_t*)output_nets_sc->data[sc_spot_output];
+                            nnet_t* in_net = (nnet_t*)input_nets_sc->data[sc_spot_input_old];
 
-                        if ((net != in_net) && (net->combined == true)) {
-                            /* if they haven't been combined already, then join the inputs and output */
-                            join_nets(net, in_net);
-                            in_net = free_nnet(in_net);
-                            /* since the driver net is deleted, copy the spot of the in_net over */
-                            input_nets_sc->data[sc_spot_input_old] = (void*)net;
-                        } else if ((net != in_net) && (net->combined == false)) {
-                            /* if they haven't been combined already, then join the inputs and output */
-                            combine_nets(net, in_net, verilog_netlist);
-                            net = NULL;
-                            /* since the driver net is deleted, copy the spot of the in_net over */
-                            output_nets_sc->data[sc_spot_output] = (void*)in_net;
+                            if ((net != in_net) && (net->combined == true)) {
+                                /* if they haven't been combined already, then join the inputs and output */
+                                join_nets(net, in_net);
+                                in_net = free_nnet(in_net);
+                                /* since the driver net is deleted, copy the spot of the in_net over */
+                                input_nets_sc->data[sc_spot_input_old] = (void*)net;
+                            } else if ((net != in_net) && (net->combined == false)) {
+                                /* if they haven't been combined already, then join the inputs and output */
+                                combine_nets(net, in_net, verilog_netlist);
+                                net = NULL;
+                                /* since the driver net is deleted, copy the spot of the in_net over */
+                                output_nets_sc->data[sc_spot_output] = (void*)in_net;
+                            }
                         }
                     }
                 }
@@ -2575,15 +2520,15 @@ signal_list_t* create_pins(ast_node_t* var_declare, char* name, char* instance_n
         new_pin->name = pin_lists->strings[i];
 
         /* check if the instantiation pin exists. */
-        if (strstr(pin_lists->strings[i], constant_driver_STR[BitSpace::_1])) {
-            add_fanout_pin_to_net(verilog_netlist->constant_net[BitSpace::_1], new_pin);
-            sc_spot = sc_add_string(input_nets_sc, pin_lists->strings[i]);
-            input_nets_sc->data[sc_spot] = (void*)verilog_netlist->constant_net[BitSpace::_1];
-        } else if (strstr(pin_lists->strings[i], constant_driver_STR[BitSpace::_0])) {
-            add_fanout_pin_to_net(verilog_netlist->constant_net[BitSpace::_0], new_pin);
-            sc_spot = sc_add_string(input_nets_sc, pin_lists->strings[i]);
-            input_nets_sc->data[sc_spot] = (void*)verilog_netlist->constant_net[BitSpace::_0];
-        } else {
+        bool found = false;
+        for (BitSpace::bit_value_t const_driver = BitSpace::_start; !found && const_driver < BitSpace::_size; const_driver += 1) {
+            if (strstr(pin_lists->strings[i], constant_driver_STR[const_driver])) {
+                add_fanout_pin_to_net(verilog_netlist->constant_net[const_driver], new_pin);
+                sc_spot = sc_add_string(input_nets_sc, pin_lists->strings[i]);
+                input_nets_sc->data[sc_spot] = (void*)verilog_netlist->constant_net[const_driver];
+            }
+        }
+        if (!found) {
             /* search for the input name  if already exists...needs to be added to
              * string cache in case it's an input pin */
             if ((sc_spot = sc_lookup_string(input_nets_sc, pin_lists->strings[i])) == -1) {
@@ -4104,18 +4049,17 @@ signal_list_t* create_mux_expressions(signal_list_t** expression_lists, nnode_t*
  * (function:  pad_compares_to_smallest_non_numerical_implementation)
  *-------------------------------------------------------------------------------------------*/
 int find_smallest_non_numerical(ast_node_t* node, signal_list_t** input_list, int num_input_lists) {
-    int i;
-    int smallest;
-    int smallest_idx;
+    int smallest = -1;
+    int smallest_idx = -1;
     short* tested = (short*)vtr::calloc(sizeof(short), num_input_lists);
-    short found_non_numerical = false;
+    short is_numerical = false;
 
-    while (found_non_numerical == false) {
+    while (is_numerical == true) {
         smallest_idx = -1;
         smallest = -1;
 
         /* find the smallest width, now verify that it's not a number */
-        for (i = 0; i < num_input_lists; i++) {
+        for (int i = 0; i < num_input_lists; i++) {
             if (tested[i] == 1) {
                 /* skip the ones we've already tried */
                 continue;
@@ -4133,14 +4077,14 @@ int find_smallest_non_numerical(ast_node_t* node, signal_list_t** input_list, in
             tested[smallest_idx] = true;
 
             /* check if the smallest is not a number */
-            for (i = 0; i < input_list[smallest_idx]->count; i++) {
-                found_non_numerical = !(
-                    input_list[smallest_idx]->pins[i]->name
-                    && (strstr(input_list[smallest_idx]->pins[i]->name, constant_driver_STR[BitSpace::_1])
-                        || strstr(input_list[smallest_idx]->pins[i]->name, constant_driver_STR[BitSpace::_0])));
-                /* Not a number so this is the smallest */
-                if (found_non_numerical)
-                    break;
+            for (int i = 0; is_numerical && i < input_list[smallest_idx]->count; i++) {
+                /* assume Not a number first, so this is potentially the smallest */
+                is_numerical = false;
+                if (input_list[smallest_idx]->pins[i]->name) {
+                    for (BitSpace::bit_value_t const_driver = BitSpace::_start; !is_numerical && const_driver < BitSpace::_size; const_driver += 1) {
+                        is_numerical = (NULL != strstr(input_list[smallest_idx]->pins[i]->name, constant_driver_STR[const_driver]));
+                    }
+                }
             }
         }
     }

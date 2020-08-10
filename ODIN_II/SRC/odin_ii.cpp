@@ -110,15 +110,6 @@ static ODIN_ERROR_CODE synthesize_verilog() {
     verilog_ast = init_parser();
     parse_to_ast();
     /**
-     *  Note that the entry point for ast optimzations is done per module with the
-     * function void next_parsed_verilog_file(ast_node_t *file_items_list) 
-     */
-
-    /* after the ast is made potentially do tagging for downstream links to verilog */
-    if (global_args.high_level_block.provenance() == argparse::Provenance::SPECIFIED)
-        add_tag_data(verilog_ast);
-
-    /**
      *  Now that we have a parse tree (abstract syntax tree [ast]) of
      *	the Verilog we want to make into a netlist. 
      */
@@ -206,18 +197,6 @@ static ODIN_ERROR_CODE synthesize_verilog() {
 
 netlist_t* start_odin_ii(int argc, char** argv) {
     double total_time = wall_time();
-
-    try {
-        /* Some initialization */
-        constant_string[BitSpace::_1] = vtr::strdup(constant_driver_STR[BitSpace::_1]);
-        constant_string[BitSpace::_0] = vtr::strdup(constant_driver_STR[BitSpace::_0]);
-        constant_string[BitSpace::_x] = vtr::strdup(constant_driver_STR[BitSpace::_x]);
-        constant_string[BitSpace::_z] = vtr::strdup(constant_driver_STR[BitSpace::_z]);
-
-    } catch (vtr::VtrError& vtr_error) {
-        printf("Odin failed to initialize %s with exit code%d\n", vtr_error.what(), ERROR_INITIALIZATION);
-        exit(ERROR_INITIALIZATION);
-    }
 
     try {
         /* Set up the global arguments to their default. */

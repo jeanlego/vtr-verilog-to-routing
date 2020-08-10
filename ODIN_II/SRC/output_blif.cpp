@@ -41,8 +41,6 @@
 #include "vtr_util.h"
 #include "vtr_memory.h"
 
-bool haveOutputLatchBlackbox = false;
-
 void depth_first_traversal_to_output(short marker_value, FILE* fp, netlist_t* netlist);
 void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, FILE* fp);
 void output_node(nnode_t* node, short traverse_number, FILE* fp);
@@ -62,12 +60,6 @@ static void print_input_pin(FILE* out, nnode_t* node, long pin_idx) {
                         net->name, node->name);
 
         fprintf(out, " %s", "unconn");
-    } else if (global_args.high_level_block.provenance() == argparse::Provenance::SPECIFIED
-               && net->driver_pin->node->related_ast_node != NULL) {
-        fprintf(out, " %s^^%i-%i",
-                net->driver_pin->node->name,
-                net->driver_pin->node->related_ast_node->far_tag,
-                net->driver_pin->node->related_ast_node->high_number);
     } else {
         if (net->driver_pin->name != NULL && ((net->driver_pin->node->type == MULTIPLY) || (net->driver_pin->node->type == HARD_IP) || (net->driver_pin->node->type == MEMORY) || (net->driver_pin->node->type == ADD) || (net->driver_pin->node->type == MINUS))) {
             fprintf(out, " %s", net->driver_pin->name);
@@ -79,14 +71,7 @@ static void print_input_pin(FILE* out, nnode_t* node, long pin_idx) {
 
 static void print_output_pin(FILE* out, nnode_t* node) {
     /* now print the output */
-    if (node->related_ast_node != NULL
-        && global_args.high_level_block.provenance() == argparse::Provenance::SPECIFIED)
-        fprintf(out, " %s^^%i-%i",
-                node->name,
-                node->related_ast_node->far_tag,
-                node->related_ast_node->high_number);
-    else
-        fprintf(out, " %s", node->name);
+    fprintf(out, " %s", node->name);
 }
 
 static void print_input_pin_list(FILE* out, nnode_t* node) {
@@ -105,16 +90,7 @@ static void print_dot_names_header(FILE* out, nnode_t* node) {
 }
 
 FILE* create_blif(const char* file_name) {
-    FILE* out = NULL;
-
-    /* open the file for output */
-    if (global_args.high_level_block.provenance() == argparse::Provenance::SPECIFIED) {
-        std::string out_file = "";
-        out_file = out_file + file_name + "_" + global_args.high_level_block.value() + ".blif";
-        out = fopen(out_file.c_str(), "w+");
-    } else {
-        out = fopen(file_name, "w+");
-    }
+    FILE* out = fopen(file_name, "w+");
 
     if (out == NULL) {
         error_message(NETLIST, unknown_location, "Could not open output file %s\n", file_name);
@@ -192,13 +168,9 @@ void output_blif(FILE* out, netlist_t* netlist) {
 void depth_first_traversal_to_output(short marker_value, FILE* fp, netlist_t* netlist) {
     int i;
 
-    netlist->constant_node[BitSpace::_0]->name = vtr::strdup("gnd");
-    netlist->constant_node[BitSpace::_1]->name = vtr::strdup("vcc");
-    netlist->constant_node[BitSpace::_z]->name = vtr::strdup("unconn");
-    /* now traverse the ground, vcc, and unconn pins */
-    depth_traverse_output_blif(netlist->constant_node[BitSpace::_0], marker_value, fp);
-    depth_traverse_output_blif(netlist->constant_node[BitSpace::_1], marker_value, fp);
-    depth_traverse_output_blif(netlist->constant_node[BitSpace::_z], marker_value, fp);
+    for (BitSpace::bit_value_t const_driver = BitSpace::_start; const_driver < BitSpace::_size; const_driver += 1) {
+        depth_traverse_output_blif(netlist->constant_node[const_driver], marker_value, fp);
+    }
 
     /* start with the primary input list */
     for (i = 0; i < netlist->num_top_input_nodes; i++) {

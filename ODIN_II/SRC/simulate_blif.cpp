@@ -56,7 +56,7 @@ enum edge_eval_e {
 inline static edge_eval_e get_edge_type(npin_t* clk, int cycle) {
     if (!clk)
         return UNK;
-    BitSpace::bit_value_t prev = !CLOCK_INITIAL_VALUE;
+    BitSpace::bit_value_t prev = BitSpace::l_not[CLOCK_INITIAL_VALUE];
     BitSpace::bit_value_t cur = CLOCK_INITIAL_VALUE;
 
     if (cycle > 0) {
@@ -117,7 +117,7 @@ inline static BitSpace::bit_value_t compute_ff(bool trigger, npin_t* D, npin_t* 
 
 static inline bool is_clock_node(nnode_t* node) {
     return node && ((node->type == CLOCK_NODE) || (std::string(node->name) == "top^clk") // Strictly for memories.
-                    || (std::string(node->name) == DEFAULT_CLOCK_NAME));
+                    || (std::string(node->name) == simulation_default_clock_name));
 }
 
 static void simulate_cycle(int cycle, stages_t* s);
@@ -623,16 +623,10 @@ static stages_t* simulate_first_cycle(netlist_t* netlist, int cycle, lines_t* l)
     }
 
     // Enqueue constant nodes.
-    nnode_t* constant_nodes[] = {
-        netlist->constant_node[BitSpace::_0],
-        netlist->constant_node[BitSpace::_1],
-        netlist->constant_node[BitSpace::_z],
-    };
-    int num_constant_nodes = 3;
-    for (i = 0; i < num_constant_nodes; i++) {
-        if (is_node_ready(constant_nodes[i], cycle)) {
-            constant_nodes[i]->in_queue = true;
-            queue.push(constant_nodes[i]);
+    for (BitSpace::bit_value_t const_driver = BitSpace::_start; const_driver < BitSpace::_size; const_driver += 1) {
+        if (is_node_ready(netlist->constant_node[const_driver], cycle)) {
+            netlist->constant_node[const_driver]->in_queue = true;
+            queue.push(netlist->constant_node[const_driver]);
         }
     }
 
@@ -2270,8 +2264,8 @@ static test_vector* generate_random_test_vector(int cycle, sim_data_t* sim_data)
      * generate test vectors
      */
     test_vector* v = (test_vector*)vtr::malloc(sizeof(test_vector));
-    v->values = 0;
-    v->counts = 0;
+    v->values = NULL;
+    v->counts = NULL;
     v->count = 0;
 
     for (int i = 0; i < sim_data->input_lines->count; i++) {
@@ -2298,9 +2292,9 @@ static test_vector* generate_random_test_vector(int cycle, sim_data_t* sim_data)
                     BitSpace::bit_value_t previous_cycle_clock_value = get_pin_value(pin, cycle - 1);
                     if ((cycle % (clock_ratio)) == 0) {
                         if (previous_cycle_clock_value == BitSpace::_0)
-                            value = 1;
+                            value = BitSpace::_1;
                         else
-                            value = 0;
+                            value = BitSpace::_0;
                     } else
                         value = previous_cycle_clock_value;
                 }
@@ -2310,18 +2304,18 @@ static test_vector* generate_random_test_vector(int cycle, sim_data_t* sim_data)
              */
             else if (contains_a_substr_of_name(global_args.sim_hold_high.value(), line->name)) {
                 if (cycle < (num_of_clock * 3))
-                    value = 0; // start with reverse value
+                    value = BitSpace::_0; // start with reverse value
                 else
-                    value = 1; // then hold to requested value
+                    value = BitSpace::_1; // then hold to requested value
             }
             /********************************************************
              * use input override to set the pin value to hold low if requested
              */
             else if (contains_a_substr_of_name(global_args.sim_hold_low.value(), line->name)) {
                 if (cycle < (num_of_clock * 3))
-                    value = 1; // start with reverse value
+                    value = BitSpace::_1; // start with reverse value
                 else
-                    value = 0; // then hold to requested value
+                    value = BitSpace::_0; // then hold to requested value
             }
             /********************************************************
              * set the value via the -3 option

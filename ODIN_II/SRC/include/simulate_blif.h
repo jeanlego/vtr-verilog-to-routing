@@ -53,8 +53,6 @@
 #define OUTPUT_ACTIVITY_FILE_NAME "output_activity"
 #define MODEL_SIM_FILE_NAME "test.do"
 
-#define DEFAULT_CLOCK_NAME "GLOBAL_SIM_BASE_CLK"
-
 struct line_t {
     int number_of_pins;
     int max_number_of_pins;

@@ -17,6 +17,7 @@ nnode_t* make_nport_gate(operation_list type, int port_sizes, int width, int wid
 
 npin_t* get_zero_pin();
 npin_t* get_one_pin();
+nnode_t* create_constant_driver_node(BitSpace::bit_value_t const_value, const char* name, loc_t location);
 
 char* node_name(nnode_t* node, char* instance_prefix_name);
 char* hard_node_name(nnode_t* node, char* instance_name_prefix, char* hb_name, char* hb_inst);

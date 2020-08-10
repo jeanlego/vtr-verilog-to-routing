@@ -44,6 +44,8 @@ class Hashtable {
     bool is_empty();
     // calls free on each item.
     void destroy_free_items();
+    // print all the items in the hash table
+    void print_hash();
 };
 
 #endif

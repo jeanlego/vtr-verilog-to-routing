@@ -72,8 +72,9 @@ void depth_first_traversal_graph_display(FILE* out, uintptr_t marker_value, netl
         depth_first_traverse_visualize(netlist->top_input_nodes[i], out, marker_value);
     }
     /* now traverse the ground and vcc pins */
-    depth_first_traverse_visualize(netlist->constant_node[BitSpace::_0], out, marker_value);
-    depth_first_traverse_visualize(netlist->constant_node[BitSpace::_1], out, marker_value);
+    for (BitSpace::bit_value_t const_driver = BitSpace::_start; const_driver < BitSpace::_size; const_driver += 1) {
+        depth_first_traverse_visualize(netlist->constant_node[const_driver], out, marker_value);
+    }
 }
 
 /*---------------------------------------------------------------------------------------------

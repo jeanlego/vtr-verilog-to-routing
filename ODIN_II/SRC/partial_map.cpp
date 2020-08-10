@@ -86,9 +86,9 @@ void depth_first_traversal_to_partial_map(short marker_value, netlist_t* netlist
         }
     }
     /* now traverse the ground and vcc pins  */
-    depth_first_traverse_partial_map(netlist->constant_node[BitSpace::_0], marker_value, netlist);
-    depth_first_traverse_partial_map(netlist->constant_node[BitSpace::_1], marker_value, netlist);
-    depth_first_traverse_partial_map(netlist->constant_node[BitSpace::_z], marker_value, netlist);
+    for (BitSpace::bit_value_t const_driver = BitSpace::_start; const_driver < BitSpace::_size; const_driver += 1) {
+        depth_first_traverse_partial_map(netlist->constant_node[const_driver], marker_value, netlist);
+    }
 }
 
 /*---------------------------------------------------------------------------------------------

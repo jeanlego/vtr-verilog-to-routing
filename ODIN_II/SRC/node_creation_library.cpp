@@ -39,7 +39,7 @@ long unique_node_name_id = 0;
  *---------------------------------------------------------------------*/
 npin_t* get_const_pin(netlist_t* netlist, BitSpace::bit_value_t constant) {
     npin_t* pad_fanout_pin = allocate_npin();
-    pad_fanout_pin->name = vtr::strdup(constant_string[constant]);
+    pad_fanout_pin->name = vtr::strdup(net_constant_STR[constant]);
     add_fanout_pin_to_net(netlist->constant_net[constant], pad_fanout_pin);
     return pad_fanout_pin;
 }
@@ -66,6 +66,31 @@ npin_t* get_zero_pin(netlist_t* netlist) {
  *-------------------------------------------------------------------------------------------*/
 npin_t* get_one_pin(netlist_t* netlist) {
     return get_const_pin(netlist, BitSpace::_1);
+}
+
+/*--------------------------------------------------------------------------
+ * (function: create_top_driver_nets)
+ * 	This function creates a constant driver for a top netlist
+ *-------------------------------------------------------------------------*/
+nnode_t* create_constant_driver_node(BitSpace::bit_value_t const_value, const char* name, loc_t location) {
+    /* create the constant node */
+    nnode_t* constant_node = allocate_nnode(location);
+    constant_node->name = vtr::strdup(name);
+    constant_node->type = CONST_NODE;
+    constant_node->const_value = const_value;
+
+    /* create the output */
+    npin_t* new_pin = allocate_npin();
+    allocate_more_output_pins(constant_node, 1);
+    add_output_port_information(constant_node, 1);
+    add_output_pin_to_node(constant_node, new_pin, 0);
+
+    /* create the net */
+    nnet_t* constant_net = allocate_nnet();
+    constant_net->name = vtr::strdup(name);
+    add_driver_pin_to_net(constant_net, new_pin);
+
+    return constant_node;
 }
 
 /*---------------------------------------------------------------------------------------------

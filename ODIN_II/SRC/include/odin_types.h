@@ -151,10 +151,12 @@ extern const char* ieee_std_STR[];
 extern const char* file_extension_supported_STR[];
 
 extern const char* constant_driver_STR[];
+extern const char* net_constant_STR[];
 
 extern const char* SINGLE_PORT_RAM_string;
 extern const char* DUAL_PORT_RAM_string;
-
+extern const char* simulation_default_clock_name;
+extern const char* simulation_const_names[];
 extern const char* edge_type_e_STR[];
 extern const char* operation_list_STR[][2];
 extern const char* ids_STR[];

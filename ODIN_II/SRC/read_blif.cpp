@@ -40,13 +40,6 @@
 
 #define TOKENS " \t\n"
 
-const char* CONST_NAME[] = {
-    "gnd",
-    "vcc",
-    "dc",
-    "unconn",
-};
-
 #define READ_BLIF_BUFFER 1048576 // 1MB
 
 int line_count;
@@ -336,7 +329,7 @@ void create_latch_node_and_driver(FILE* file, Hashtable* output_nets_hash) {
     add_input_pin_to_node(new_node, new_pin, 1);
 
     /* add a name for the node, keeping the name of the node same as the output */
-    new_node->name = make_full_ref_name(names[1], NULL, NULL, NULL, -1);
+    new_node->name = vtr::strdup(names[1]);
 
     /*add this node to blif_netlist as an ff (flip-flop) node */
     blif_netlist->ff_nodes = (nnode_t**)vtr::realloc(blif_netlist->ff_nodes, sizeof(nnode_t*) * (blif_netlist->num_ff_nodes + 1));
@@ -344,10 +337,10 @@ void create_latch_node_and_driver(FILE* file, Hashtable* output_nets_hash) {
 
     /*add name information and a net(driver) for the output */
     nnet_t* new_net = allocate_nnet();
-    new_net->name = new_node->name;
+    new_net->name = vtr::strdup(new_node->name);
 
     new_pin = allocate_npin();
-    new_pin->name = new_node->name;
+    new_pin->name = vtr::strdup(new_node->name);
     new_pin->type = OUTPUT;
     add_output_pin_to_node(new_node, new_pin, 0);
     add_driver_pin_to_net(new_net, new_pin);
@@ -418,7 +411,7 @@ char* search_clock_name(FILE* file) {
     if (found) {
         to_return = input_names[0];
     } else {
-        to_return = vtr::strdup(DEFAULT_CLOCK_NAME);
+        to_return = vtr::strdup(simulation_default_clock_name);
         for (int i = 0; i < input_names_count; i++) {
             if (input_names[i]) {
                 vtr::free(input_names[i]);
@@ -494,7 +487,7 @@ void create_hard_block_nodes(hard_block_models* models, FILE* file, Hashtable* o
     // Name the node subcircuit_name~hard_block_number so that the name is unique.
     static long hard_block_number = 0;
     odin_sprintf(buffer, "%s~%ld", subcircuit_name, hard_block_number++);
-    new_node->name = make_full_ref_name(buffer, NULL, NULL, NULL, -1);
+    new_node->name = vtr::strdup(buffer);
 
     // Determine the type of hard block.
     char* subcircuit_name_prefix = vtr::strdup(subcircuit_name);
@@ -604,10 +597,11 @@ void create_internal_node_and_driver(FILE* file, Hashtable* output_nets_hash) {
     new_node->related_ast_node = NULL;
 
     /* consts already created as top module so ignore them */
-    if (
-        !strcmp(names[input_count - 1], CONST_NAME[BitSpace::_0])
-        || !strcmp(names[input_count - 1], CONST_NAME[BitSpace::_1])
-        || !strcmp(names[input_count - 1], CONST_NAME[BitSpace::_z])) {
+    bool is_top_net = false;
+    for (BitSpace::bit_value_t const_value = BitSpace::_start; !is_top_net && const_value < BitSpace::_size; const_value += 1) {
+        is_top_net = (0 == strcmp(names[input_count - 1], simulation_const_names[const_value]));
+    }
+    if (is_top_net) {
         skip_reading_bit_map = true;
         free_nnode(new_node);
     } else {
@@ -636,31 +630,20 @@ void create_internal_node_and_driver(FILE* file, Hashtable* output_nets_hash) {
         }
 
         /* add names and type information to the created input pins */
-        int i;
-        for (i = 0; i <= input_count - 2; i++) {
+        for (int i = 0; i <= input_count - 2; i++) {
             npin_t* new_pin = allocate_npin();
             new_pin->name = vtr::strdup(names[i]);
             new_pin->type = INPUT;
             add_input_pin_to_node(new_node, new_pin, i);
         }
 
-        /* add information for the intermediate VCC and GND node (appears in ABC )*/
-        if (new_node->const_value == BitSpace::_0) {
+        /* add information for the intermediate constant nodes*/
+        if (new_node->type == CONST_NODE) {
             allocate_more_input_pins(new_node, 1);
             add_input_port_information(new_node, 1);
 
             npin_t* new_pin = allocate_npin();
-            new_pin->name = vtr::strdup(CONST_NAME[BitSpace::_0]);
-            new_pin->type = INPUT;
-            add_input_pin_to_node(new_node, new_pin, 0);
-        }
-
-        if (new_node->const_value == BitSpace::_1) {
-            allocate_more_input_pins(new_node, 1);
-            add_input_port_information(new_node, 1);
-
-            npin_t* new_pin = allocate_npin();
-            new_pin->name = vtr::strdup(CONST_NAME[BitSpace::_1]);
+            new_pin->name = vtr::strdup(simulation_const_names[new_node->const_value]);
             new_pin->type = INPUT;
             add_input_pin_to_node(new_node, new_pin, 0);
         }
@@ -670,7 +653,7 @@ void create_internal_node_and_driver(FILE* file, Hashtable* output_nets_hash) {
         add_output_port_information(new_node, 1);
 
         /* add a name for the node, keeping the name of the node same as the output */
-        new_node->name = make_full_ref_name(names[input_count - 1], NULL, NULL, NULL, -1);
+        new_node->name = vtr::strdup(names[input_count - 1]);
 
         /*add this node to blif_netlist as an internal node */
         blif_netlist->internal_nodes = (nnode_t**)vtr::realloc(blif_netlist->internal_nodes, sizeof(nnode_t*) * (blif_netlist->num_internal_nodes + 1));
@@ -721,14 +704,10 @@ void read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FILE* file) 
 
         node->type = CONST_NODE;
         char* ptr = vtr::strtok(buffer, "\t\n", file, buffer);
-        if (!ptr) {
-            node->const_value = BitSpace::_0;
-        } else if (!strcmp(ptr, " 1")) {
+        if (ptr && !strcmp(ptr, " 1")) {
             node->const_value = BitSpace::_1;
-        } else if (!strcmp(ptr, " 0")) {
-            node->const_value = BitSpace::_0;
         } else {
-            node->const_value = BitSpace::_1;
+            node->const_value = BitSpace::_0;
         }
     } else {
         while (1) {
@@ -951,8 +930,6 @@ void read_bit_map_find_unknown_gate(int input_count, nnode_t* node, FILE* file) 
  * to add the top level inputs to the netlist
  *-------------------------------------------------------------------------------------------*/
 static void build_top_input_node(const char* name_str, Hashtable* output_nets_hash) {
-    char* temp_string = make_full_ref_name(name_str, NULL, NULL, NULL, -1);
-
     /* create a new top input node and net*/
 
     nnode_t* new_node = allocate_nnode(my_location);
@@ -961,7 +938,7 @@ static void build_top_input_node(const char* name_str, Hashtable* output_nets_ha
     new_node->type = INPUT_NODE;
 
     /* add the name of the input variable */
-    new_node->name = temp_string;
+    new_node->name = vtr::strdup(name_str);
 
     /* allocate the pins needed */
     allocate_more_output_pins(new_node, 1);
@@ -969,27 +946,27 @@ static void build_top_input_node(const char* name_str, Hashtable* output_nets_ha
 
     /* Create the pin connection for the net */
     npin_t* new_pin = allocate_npin();
-    new_pin->name = vtr::strdup(temp_string);
+    new_pin->name = vtr::strdup(name_str);
     new_pin->type = OUTPUT;
 
     /* hookup the pin, net, and node */
     add_output_pin_to_node(new_node, new_pin, 0);
 
     nnet_t* new_net = allocate_nnet();
-    new_net->name = vtr::strdup(temp_string);
+    new_net->name = vtr::strdup(name_str);
 
     add_driver_pin_to_net(new_net, new_pin);
 
     blif_netlist->top_input_nodes = (nnode_t**)vtr::realloc(blif_netlist->top_input_nodes, sizeof(nnode_t*) * (blif_netlist->num_top_input_nodes + 1));
     blif_netlist->top_input_nodes[blif_netlist->num_top_input_nodes++] = new_node;
 
-    //long sc_spot = sc_add_string(output_nets_sc, temp_string);
+    //long sc_spot = sc_add_string(output_nets_sc, name_str);
     //if (output_nets_sc->data[sc_spot])
     //warning_message(NETLIST,linenum,-1, "Net (%s) with the same name already created\n",temp_string);
 
     //output_nets_sc->data[sc_spot] = new_net;
 
-    output_nets_hash->add(temp_string, new_net);
+    output_nets_hash->add(name_str, new_net);
 }
 
 void add_top_input_nodes(FILE* file, Hashtable* output_nets_hash) {
@@ -1001,7 +978,7 @@ void add_top_input_nodes(FILE* file, Hashtable* output_nets_hash) {
      */
     if (insert_global_clock) {
         insert_global_clock = false;
-        build_top_input_node(DEFAULT_CLOCK_NAME, output_nets_hash);
+        build_top_input_node(simulation_default_clock_name, output_nets_hash);
     }
 
     char* ptr;
@@ -1020,9 +997,6 @@ void rb_create_top_output_nodes(FILE* file) {
     char buffer[READ_BLIF_BUFFER];
 
     while ((ptr = vtr::strtok(NULL, TOKENS, file, buffer))) {
-        char* temp_string = make_full_ref_name(ptr, NULL, NULL, NULL, -1);
-        ;
-
         /*add_a_fanout_pin_to_net((nnet_t*)output_nets_sc->data[sc_spot], new_pin);*/
 
         /* create a new top output node and */
@@ -1031,7 +1005,7 @@ void rb_create_top_output_nodes(FILE* file) {
         new_node->type = OUTPUT_NODE;
 
         /* add the name of the output variable */
-        new_node->name = temp_string;
+        new_node->name = vtr::strdup(ptr);
 
         /* allocate the input pin needed */
         allocate_more_input_pins(new_node, 1);
@@ -1039,7 +1013,7 @@ void rb_create_top_output_nodes(FILE* file) {
 
         /* Create the pin connection for the net */
         npin_t* new_pin = allocate_npin();
-        new_pin->name = temp_string;
+        new_pin->name = vtr::strdup(ptr);
         /* hookup the pin, net, and node */
         add_input_pin_to_node(new_node, new_pin, 0);
 
@@ -1073,58 +1047,15 @@ void rb_look_for_clocks() {
  */
 
 void rb_create_top_driver_nets(const char* instance_name_prefix, Hashtable* output_nets_hash) {
-    npin_t* new_pin;
     /* create the constant nets */
+    for (BitSpace::bit_value_t const_value = BitSpace::_start; const_value < BitSpace::_size; const_value += 1) {
+        nnode_t* const_node = create_constant_driver_node(const_value, simulation_const_names[const_value], my_location);
+        blif_netlist->constant_node[const_value] = const_node;
+        blif_netlist->constant_net[const_value] = const_node->output_pins[0]->net;
 
-    /* ZERO net */
-    /* description given for the zero net is same for other two */
-    blif_netlist->constant_net[BitSpace::_0] = allocate_nnet();                   // allocate memory to net pointer
-    blif_netlist->constant_node[BitSpace::_0] = allocate_nnode(unknown_location); // allocate memory to node pointer
-    blif_netlist->constant_node[BitSpace::_0]->type = CONST_NODE;                 // mark the type
-    blif_netlist->constant_node[BitSpace::_0]->const_value = BitSpace::_0;        // mark the type
-    allocate_more_output_pins(blif_netlist->constant_node[BitSpace::_0], 1);      // alloacate 1 output pin pointer to this node
-    add_output_port_information(blif_netlist->constant_node[BitSpace::_0], 1);    // add port info. this port has 1 pin ,till now number of port for this is one
-    new_pin = allocate_npin();
-    add_output_pin_to_node(blif_netlist->constant_node[BitSpace::_0], new_pin, 0); // add this pin to output pin pointer array of this node
-    add_driver_pin_to_net(blif_netlist->constant_net[BitSpace::_0], new_pin);      // add this pin to net as driver pin
-
-    /*ONE net*/
-    blif_netlist->constant_net[BitSpace::_1] = allocate_nnet();
-    blif_netlist->constant_node[BitSpace::_1] = allocate_nnode(unknown_location);
-    blif_netlist->constant_node[BitSpace::_1]->type = CONST_NODE;
-    blif_netlist->constant_node[BitSpace::_1]->const_value = BitSpace::_1;
-    allocate_more_output_pins(blif_netlist->constant_node[BitSpace::_1], 1);
-    add_output_port_information(blif_netlist->constant_node[BitSpace::_1], 1);
-    new_pin = allocate_npin();
-    add_output_pin_to_node(blif_netlist->constant_node[BitSpace::_1], new_pin, 0);
-    add_driver_pin_to_net(blif_netlist->constant_net[BitSpace::_1], new_pin);
-
-    /* Pad net */
-    blif_netlist->constant_net[BitSpace::_z] = allocate_nnet();
-    blif_netlist->constant_node[BitSpace::_z] = allocate_nnode(unknown_location);
-    blif_netlist->constant_node[BitSpace::_z]->type = CONST_NODE;
-    blif_netlist->constant_node[BitSpace::_z]->const_value = BitSpace::_z;
-    allocate_more_output_pins(blif_netlist->constant_node[BitSpace::_z], 1);
-    add_output_port_information(blif_netlist->constant_node[BitSpace::_z], 1);
-    new_pin = allocate_npin();
-    add_output_pin_to_node(blif_netlist->constant_node[BitSpace::_z], new_pin, 0);
-    add_driver_pin_to_net(blif_netlist->constant_net[BitSpace::_z], new_pin);
-
-    /* CREATE the driver for the ZERO */
-    blif_netlist->constant_net[BitSpace::_0]->name = make_full_ref_name(instance_name_prefix, NULL, NULL, constant_string[BitSpace::_0], -1);
-    output_nets_hash->add(CONST_NAME[BitSpace::_0], blif_netlist->constant_net[BitSpace::_0]);
-
-    /* CREATE the driver for the ONE and store twice */
-    blif_netlist->constant_net[BitSpace::_1]->name = make_full_ref_name(instance_name_prefix, NULL, NULL, constant_string[BitSpace::_1], -1);
-    output_nets_hash->add(CONST_NAME[BitSpace::_1], blif_netlist->constant_net[BitSpace::_1]);
-
-    /* CREATE the driver for the PAD */
-    blif_netlist->constant_net[BitSpace::_z]->name = make_full_ref_name(instance_name_prefix, NULL, NULL, constant_string[BitSpace::_z], -1);
-    output_nets_hash->add(CONST_NAME[BitSpace::_z], blif_netlist->constant_net[BitSpace::_z]);
-
-    blif_netlist->constant_node[BitSpace::_1]->name = vtr::strdup(CONST_NAME[BitSpace::_1]);
-    blif_netlist->constant_node[BitSpace::_0]->name = vtr::strdup(CONST_NAME[BitSpace::_0]);
-    blif_netlist->constant_node[BitSpace::_z]->name = vtr::strdup(CONST_NAME[BitSpace::_z]);
+        /* add to the hash table */
+        output_nets_hash->add(simulation_const_names[const_value], blif_netlist->constant_net[const_value]);
+    }
 }
 
 /*---------------------------------------------------------------------------------------------
@@ -1167,8 +1098,10 @@ void hook_up_node(nnode_t* node, Hashtable* output_nets_hash) {
 
         nnet_t* output_net = (nnet_t*)output_nets_hash->get(input_pin->name);
 
-        if (!output_net)
+        if (!output_net) {
+            output_nets_hash->print_hash();
             error_message(PARSE_BLIF, my_location, "Error: Could not hook up the pin %s: not available.", input_pin->name);
+        }
 
         add_fanout_pin_to_net(output_net, input_pin);
     }

@@ -27,8 +27,6 @@ extern long num_top_input_nodes;
 extern nnode_t** top_output_nodes;
 extern long num_top_output_nodes;
 
-extern char* constant_string[];
-
 extern t_arch Arch;
 extern short physical_lut_size;
 

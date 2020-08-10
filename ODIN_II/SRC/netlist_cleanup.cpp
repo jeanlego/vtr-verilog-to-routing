@@ -151,12 +151,11 @@ void identify_unused_nodes(netlist_t* netlist) {
 
     addsub_nodes.node = NULL;
     addsub_nodes.next = NULL;
+    for (BitSpace::bit_value_t const_driver = BitSpace::_start; const_driver < BitSpace::_size; const_driver += 1) {
+        traverse_forward(netlist->constant_node[const_driver], true, false);
+    }
 
-    traverse_forward(netlist->constant_node[BitSpace::_0], true, false);
-    traverse_forward(netlist->constant_node[BitSpace::_1], true, false);
-    traverse_forward(netlist->constant_node[BitSpace::_z], true, false);
-    int i;
-    for (i = 0; i < netlist->num_top_input_nodes; i++) {
+    for (int i = 0; i < netlist->num_top_input_nodes; i++) {
         traverse_forward(netlist->top_input_nodes[i], true, false);
     }
 }

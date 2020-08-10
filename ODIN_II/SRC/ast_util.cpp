@@ -44,53 +44,6 @@ STRING_CACHE* copy_param_table_sc(STRING_CACHE* to_copy);
 void assert_constant_positionnal_args(ast_node_t* node, long arg_count);
 void c_simple_print(std::string str);
 
-// HIGH LEVEL AST TAG
-static int high_level_id;
-
-/*---------------------------------------------------------------------------
- * (function: update_tree)
- *-------------------------------------------------------------------------*/
-void update_tree_tag(ast_node_t* node, int high_level_block_type_to_search, int tag) {
-    long i;
-    int tagged = tag;
-    if (node) {
-        if (node->type == high_level_block_type_to_search)
-            tagged = ++high_level_id;
-
-        if (tagged > -1) {
-            node->far_tag = tagged;
-            node->high_number = node->loc.line;
-        }
-
-        for (i = 0; i < node->num_children; i++)
-            update_tree_tag(node->children[i], high_level_block_type_to_search, tagged);
-    }
-}
-
-/*---------------------------------------------------------------------------
- * (function: add_tag_data)
- *-------------------------------------------------------------------------*/
-void add_tag_data(ast_t* ast) {
-    long i;
-    high_level_id = -1;
-
-    ids type = NO_ID;
-    if (global_args.high_level_block.value() == "if") {
-        type = IF;
-    } else if (global_args.high_level_block.value() == "always") {
-        type = ALWAYS;
-    } else if (global_args.high_level_block.value() == "module") {
-        type = MODULE;
-    }
-
-    if (type != NO_ID) {
-        for (i = 0; i < ast->top_modules_count; i++)
-            update_tree_tag(ast->top_modules[i], type, -1);
-    }
-}
-
-// END HIGH LEVEL TAG
-
 /*---------------------------------------------------------------------------
  * (function: allocate_ast)
  *-------------------------------------------------------------------------*/
