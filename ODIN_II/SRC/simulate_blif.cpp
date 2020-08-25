@@ -144,6 +144,7 @@ static int get_pin_cycle(npin_t* pin);
 BitSpace::bit_value_t get_line_pin_value(line_t* line, int pin_num, int cycle);
 static int line_has_unknown_pin(line_t* line, int cycle);
 
+static void compute_tristate_node(nnode_t* node, int cycle);
 static void compute_flipflop_node(nnode_t* node, int cycle);
 static void compute_mux_2_node(nnode_t* node, int cycle);
 
@@ -786,11 +787,18 @@ static bool compute_and_store_value(nnode_t* node, int cycle) {
             }
             break;
         }
-        case BUF_NODE: // pass through the values
+        case BUF: // pass through the values
         {
             verify_i_o_availabilty(node, 1, 1);
             BitSpace::bit_value_t pin = get_pin_value(node->input_pins[0], cycle);
             update_pin_value(node->output_pins[0], BitSpace::l_buf[pin], cycle);
+            break;
+        }
+        case BUFIF0:
+        case BUFIF1:
+        case NOTIF0:
+        case NOTIF1: {
+            compute_tristate_node(node, cycle);
             break;
         }
         case LOGICAL_AND: // &&
@@ -1074,7 +1082,10 @@ static bool compute_and_store_value(nnode_t* node, int cycle) {
         case GTE:
         case LTE:
         default:
-            error_message(SIMULATION, node->loc, "Node should have been converted to softer version: %s", node->name);
+            error_message(SIMULATION, node->loc,
+                          "Node [%s] should have been converted to softer version: %s",
+                          node_name_based_on_op(node),
+                          node->name);
             break;
     }
 
@@ -1372,6 +1383,37 @@ static void compute_flipflop_node(nnode_t* node, int cycle) {
 
     BitSpace::bit_value_t new_value = compute_ff(trigger, D, Q, cycle);
     update_pin_value(output_pin, new_value, cycle);
+}
+
+/*
+ * Computes a node of type tristate for the given cycle.
+ */
+static void compute_tristate_node(nnode_t* node, int cycle) {
+    verify_i_o_availabilty(node, 3, 1);
+    BitSpace::bit_value_t input = get_pin_value(node->input_pins[0], cycle);
+    BitSpace::bit_value_t select = get_pin_value(node->input_pins[1], cycle);
+    BitSpace::bit_value_t value = BitSpace::_x;
+    switch (node->type) {
+        case BUFIF0: {
+            value = BitSpace::l_bufif0[input][select];
+            break;
+        }
+        case BUFIF1: {
+            value = BitSpace::l_bufif1[input][select];
+            break;
+        }
+        case NOTIF0: {
+            value = BitSpace::l_notif0[input][select];
+            break;
+        }
+        case NOTIF1: {
+            value = BitSpace::l_notif1[input][select];
+            break;
+        }
+        default:
+            oassert(false);
+    }
+    update_pin_value(node->output_pins[0], value, cycle);
 }
 
 /*

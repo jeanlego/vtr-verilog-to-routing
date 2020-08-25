@@ -205,7 +205,11 @@ enum operation_list {
     NO_OP,
     MULTI_PORT_MUX, // port 1 = control, port 2+ = mux options
     FF_NODE,
-    BUF_NODE,
+    BUF,
+    BUFIF1,
+    BUFIF0,
+    NOTIF1,
+    NOTIF0,
     INPUT_NODE,
     OUTPUT_NODE,
     GND_NODE,
@@ -287,11 +291,10 @@ enum ids {
     TASK,
     TASK_ITEMS,
     /* primitives */
-    GATE,
     GATE_INSTANCE,
-    ONE_GATE_INSTANCE,
+    GATE_INSTANCE_LIST,
     /* Module instances */
-    MODULE_CONNECT_LIST,
+    CONNECTION_LIST,
     MODULE_CONNECT,
     MODULE_PARAMETER_LIST,
     MODULE_PARAMETER,

@@ -44,13 +44,14 @@
 bool haveOutputLatchBlackbox = false;
 
 void depth_first_traversal_to_output(short marker_value, FILE* fp, netlist_t* netlist);
-void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, FILE* fp);
-void output_node(nnode_t* node, short traverse_number, FILE* fp);
+void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, FILE* fp, netlist_t* netlist);
+void output_node(nnode_t* node, short traverse_number, FILE* fp, netlist_t* netlist);
 void define_logical_function(nnode_t* node, FILE* out);
 void define_set_input_logical_function(nnode_t* node, const char* bit_output, FILE* out);
 void define_ff(nnode_t* node, FILE* out);
 void define_decoded_mux(nnode_t* node, FILE* out);
 void output_blif_pin_connect(nnode_t* node, FILE* out);
+void define_tristate_node(nnode_t* node, netlist_t* netlist, FILE* fp);
 
 static void print_input_pin(FILE* out, nnode_t* node, long pin_idx) {
     oassert(pin_idx < node->num_input_pins);
@@ -196,14 +197,14 @@ void depth_first_traversal_to_output(short marker_value, FILE* fp, netlist_t* ne
     netlist->vcc_node->name = vtr::strdup("vcc");
     netlist->pad_node->name = vtr::strdup("unconn");
     /* now traverse the ground, vcc, and unconn pins */
-    depth_traverse_output_blif(netlist->gnd_node, marker_value, fp);
-    depth_traverse_output_blif(netlist->vcc_node, marker_value, fp);
-    depth_traverse_output_blif(netlist->pad_node, marker_value, fp);
+    depth_traverse_output_blif(netlist->gnd_node, marker_value, fp, netlist);
+    depth_traverse_output_blif(netlist->vcc_node, marker_value, fp, netlist);
+    depth_traverse_output_blif(netlist->pad_node, marker_value, fp, netlist);
 
     /* start with the primary input list */
     for (i = 0; i < netlist->num_top_input_nodes; i++) {
         if (netlist->top_input_nodes[i] != NULL) {
-            depth_traverse_output_blif(netlist->top_input_nodes[i], marker_value, fp);
+            depth_traverse_output_blif(netlist->top_input_nodes[i], marker_value, fp, netlist);
         }
     }
 }
@@ -211,7 +212,7 @@ void depth_first_traversal_to_output(short marker_value, FILE* fp, netlist_t* ne
 /*--------------------------------------------------------------------------
  * (function: depth_first_traverse)
  *------------------------------------------------------------------------*/
-void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, FILE* fp) {
+void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, FILE* fp, netlist_t* netlist) {
     int i, j;
     nnode_t* next_node;
     nnet_t* next_net;
@@ -222,7 +223,7 @@ void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, F
         /* ELSE - this is a new node so depth visit it */
 
         /* POST traverse  map the node since you might delete */
-        output_node(node, traverse_mark_number, fp);
+        output_node(node, traverse_mark_number, fp, netlist);
 
         /* mark that we have visitied this node now */
         node->traverse_visited = traverse_mark_number;
@@ -241,7 +242,7 @@ void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, F
                     continue;
 
                 /* recursive call point */
-                depth_traverse_output_blif(next_node, traverse_mark_number, fp);
+                depth_traverse_output_blif(next_node, traverse_mark_number, fp, netlist);
             }
         }
     }
@@ -250,7 +251,7 @@ void depth_traverse_output_blif(nnode_t* node, uintptr_t traverse_mark_number, F
  * (function: output_node)
  * 	Depending on node type, figures out what to print for this node
  *------------------------------------------------------------------*/
-void output_node(nnode_t* node, short /*traverse_number*/, FILE* fp) {
+void output_node(nnode_t* node, short /*traverse_number*/, FILE* fp, netlist_t* netlist) {
     switch (node->type) {
         case GT:
             define_set_input_logical_function(node, "100 1\n", fp);
@@ -271,8 +272,14 @@ void output_node(nnode_t* node, short /*traverse_number*/, FILE* fp) {
         case BITWISE_NOT:
             define_set_input_logical_function(node, "0 1\n", fp);
             break;
-        case BUF_NODE:
+        case BUF:
             define_set_input_logical_function(node, "1 1\n", fp);
+            break;
+        case BUFIF0: // fallthrough
+        case BUFIF1: // fallthrough
+        case NOTIF0: // fallthrough
+        case NOTIF1: // fallthrough
+            define_tristate_node(node, netlist, fp);
             break;
         case LOGICAL_AND:
         case LOGICAL_OR:
@@ -480,6 +487,34 @@ void define_ff(nnode_t* node, FILE* out) {
 
     /* initial value */
     fprintf(out, " %d\n\n", node->initial_value);
+}
+
+/*--------------------------------------------------------------------------
+ * (function: define_tristate_node)
+ *------------------------------------------------------------------------*/
+void define_tristate_node(nnode_t* node, netlist_t* netlist, FILE* fp) {
+    // add space for the unconn since it will act as a mux
+    add_input_port_information(node, 1);
+    allocate_more_input_pins(node, 1);
+    add_input_pin_to_node(node, get_pad_pin(netlist), 2);
+
+    switch (node->type) {
+        case BUFIF0:
+            define_set_input_logical_function(node, "10- 1\n-11 1\n", fp);
+            break;
+        case BUFIF1:
+            define_set_input_logical_function(node, "11- 1\n-01 1\n", fp);
+            break;
+        case NOTIF0:
+            define_set_input_logical_function(node, "00- 1\n-11 1\n", fp);
+            break;
+        case NOTIF1:
+            define_set_input_logical_function(node, "01- 1\n-1 1\n", fp);
+            break;
+        default:
+            oassert(false && "Invalid tristate type");
+            break;
+    }
 }
 
 /*--------------------------------------------------------------------------

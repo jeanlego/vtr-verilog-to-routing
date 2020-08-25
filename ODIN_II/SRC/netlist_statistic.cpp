@@ -162,6 +162,10 @@ static void increment_type_count(operation_list op, netlist_t* netlist) {
 }
 static void count_node_type(operation_list op, nnode_t* node, netlist_t* netlist) {
     switch (op) {
+        case BUFIF0: // fallthrough
+        case BUFIF1: // fallthrough
+        case NOTIF0: // fallthrough
+        case NOTIF1: // fallthrough
         case GENERIC:
             /**
              * generic a packed into luts

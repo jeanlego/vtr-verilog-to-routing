@@ -43,7 +43,11 @@ const char* operation_list_STR[][2] = {
     {"NO_OP", "nOP"},
     {"MULTI_PORT_MUX", "nMUX"}, // port 1 = control, port 2+ = mux options
     {"FF_NODE", "FF"},
-    {"BUF_NODE", "BUF"},
+    {"BUF", "BUF"},
+    {"BUFIF1", "Bif1"},
+    {"BUFIF0", "Bif0"},
+    {"NOTIF1", "Nif1"},
+    {"NOTIF0", "Nif0"},
     {"INPUT_NODE", "IN"},
     {"OUTPUT_NODE", "OUT"},
     {"GND_NODE", "GND"},
@@ -125,11 +129,10 @@ const char* ids_STR[] = {
     "TASK",
     "TASK_ITEMS",
     /* primitives */
-    "GATE",
     "GATE_INSTANCE",
-    "ONE_GATE_INSTANCE",
+    "GATE_INSTANCE_LIST",
     /* Module instances */
-    "MODULE_CONNECT_LIST",
+    "CONNECTION_LIST",
     "MODULE_CONNECT",
     "MODULE_PARAMETER_LIST",
     "MODULE_PARAMETER",
