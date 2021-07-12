@@ -28,6 +28,7 @@ static void log_single_overused_node_status(int overuse_index, RRNodeId inode);
  */
 void log_overused_nodes_status(int max_logged_overused_rr_nodes) {
     const auto& device_ctx = g_vpr_ctx.device();
+    const auto& rr_graph = device_ctx.rr_graph;
     const auto& route_ctx = g_vpr_ctx.routing();
 
     //Print overuse info header
@@ -36,7 +37,7 @@ void log_overused_nodes_status(int max_logged_overused_rr_nodes) {
     //Print overuse info body
     int overuse_index = 0;
     for (size_t inode = 0; inode < device_ctx.rr_nodes.size(); inode++) {
-        int overuse = route_ctx.rr_node_route_inf[inode].occ() - device_ctx.rr_nodes[inode].capacity();
+        int overuse = route_ctx.rr_node_route_inf[inode].occ() - rr_graph.node_capacity(RRNodeId(inode));
 
         if (overuse > 0) {
             log_single_overused_node_status(overuse_index, RRNodeId(inode));
@@ -130,6 +131,7 @@ void report_overused_nodes() {
  */
 void generate_overused_nodes_to_congested_net_lookup(std::map<RRNodeId, std::set<ClusterNetId>>& nodes_to_nets_lookup) {
     const auto& device_ctx = g_vpr_ctx.device();
+    const auto& rr_graph = device_ctx.rr_graph;
     const auto& route_ctx = g_vpr_ctx.routing();
     const auto& cluster_ctx = g_vpr_ctx.clustering();
 
@@ -139,7 +141,7 @@ void generate_overused_nodes_to_congested_net_lookup(std::map<RRNodeId, std::set
         for (t_trace* tptr = route_ctx.trace[net_id].head; tptr != nullptr; tptr = tptr->next) {
             int inode = tptr->index;
 
-            int overuse = route_ctx.rr_node_route_inf[inode].occ() - device_ctx.rr_nodes[inode].capacity();
+            int overuse = route_ctx.rr_node_route_inf[inode].occ() - rr_graph.node_capacity(RRNodeId(inode));
             if (overuse > 0) {
                 nodes_to_nets_lookup[RRNodeId(inode)].insert(net_id);
             }
@@ -187,9 +189,10 @@ static void report_overused_ipin_opin(std::ostream& os, RRNodeId node_id) {
 ///@brief Print out information specific to CHANX/CHANY type rr nodes
 static void report_overused_chanx_chany(std::ostream& os, RRNodeId node_id) {
     const auto& device_ctx = g_vpr_ctx.device();
+    const auto& rr_graph = device_ctx.rr_graph;
 
     os << "Track number = " << device_ctx.rr_nodes.node_track_num(node_id) << '\n';
-    os << "Direction = " << device_ctx.rr_nodes.node_direction_string(node_id) << "\n\n";
+    os << "Direction = " << rr_graph.node_direction_string(node_id) << "\n\n";
 
     //CHANX/CHANY rr nodes span across several grid locations.
     //Need to print out their starting and ending locations.
@@ -277,7 +280,7 @@ static void log_single_overused_node_status(int overuse_index, RRNodeId node_id)
 
     //Direction
     if (node_type == e_rr_type::CHANX || node_type == e_rr_type::CHANY) {
-        VTR_LOG(" %12s", device_ctx.rr_nodes.node_direction_string(node_id));
+        VTR_LOG(" %12s", rr_graph.node_direction_string(node_id).c_str());
     } else {
         VTR_LOG(" %12s", "N/A");
     }

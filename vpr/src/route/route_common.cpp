@@ -90,8 +90,8 @@ static t_trace_branch traceback_branch(int node, int target_net_pin_index, std::
 static std::pair<t_trace*, t_trace*> add_trace_non_configurable(t_trace* head, t_trace* tail, int node, std::unordered_set<int>& visited);
 static std::pair<t_trace*, t_trace*> add_trace_non_configurable_recurr(int node, std::unordered_set<int>& visited, int depth = 0);
 
-static vtr::vector<ClusterNetId, std::vector<int>> load_net_rr_terminals(const t_rr_node_indices& L_rr_node_indices);
-static vtr::vector<ClusterBlockId, std::vector<int>> load_rr_clb_sources(const t_rr_node_indices& L_rr_node_indices);
+static vtr::vector<ClusterNetId, std::vector<int>> load_net_rr_terminals(const RRGraphView& rr_graph);
+static vtr::vector<ClusterBlockId, std::vector<int>> load_rr_clb_sources(const RRGraphView& rr_graph);
 
 static t_clb_opins_used alloc_and_load_clb_opins_used_locally();
 static void adjust_one_rr_occ_and_acc_cost(int inode, int add_or_sub, float acc_fac);
@@ -325,10 +325,11 @@ bool feasible_routing() {
      * that the occupancy arrays are up to date when it is called.             */
 
     auto& device_ctx = g_vpr_ctx.device();
+    const auto& rr_graph = device_ctx.rr_graph;
     auto& route_ctx = g_vpr_ctx.routing();
 
     for (size_t inode = 0; inode < device_ctx.rr_nodes.size(); inode++) {
-        if (route_ctx.rr_node_route_inf[inode].occ() > device_ctx.rr_nodes[inode].capacity()) {
+        if (route_ctx.rr_node_route_inf[inode].occ() > rr_graph.node_capacity(RRNodeId(inode))) {
             return (false);
         }
     }
@@ -339,12 +340,13 @@ bool feasible_routing() {
 //Returns all RR nodes in the current routing which are congested
 std::vector<int> collect_congested_rr_nodes() {
     auto& device_ctx = g_vpr_ctx.device();
+    const auto& rr_graph = device_ctx.rr_graph;
     auto& route_ctx = g_vpr_ctx.routing();
 
     std::vector<int> congested_rr_nodes;
     for (size_t inode = 0; inode < device_ctx.rr_nodes.size(); inode++) {
         short occ = route_ctx.rr_node_route_inf[inode].occ();
-        short capacity = device_ctx.rr_nodes[inode].capacity();
+        short capacity = rr_graph.node_capacity(RRNodeId(inode));
 
         if (occ > capacity) {
             congested_rr_nodes.push_back(inode);
@@ -424,11 +426,12 @@ void pathfinder_update_acc_cost_and_overuse_info(float acc_fac, OveruseInfo& ove
      * This routine also creates a new overuse info for the current routing iteration.  */
 
     auto& device_ctx = g_vpr_ctx.device();
+    const auto& rr_graph = device_ctx.rr_graph;
     auto& route_ctx = g_vpr_ctx.mutable_routing();
     size_t overused_nodes = 0, total_overuse = 0, worst_overuse = 0;
 
     for (size_t inode = 0; inode < device_ctx.rr_nodes.size(); inode++) {
-        int overuse = route_ctx.rr_node_route_inf[inode].occ() - device_ctx.rr_nodes[inode].capacity();
+        int overuse = route_ctx.rr_node_route_inf[inode].occ() - rr_graph.node_capacity(RRNodeId(inode));
 
         // If overused, update the acc_cost and add this node to the overuse info
         // If not, do nothing
@@ -477,10 +480,10 @@ void init_route_structs(int bb_factor) {
     route_ctx.trace_nodes.resize(cluster_ctx.clb_nlist.nets().size());
 
     //Various look-ups
-    route_ctx.net_rr_terminals = load_net_rr_terminals(device_ctx.rr_node_indices);
+    route_ctx.net_rr_terminals = load_net_rr_terminals(device_ctx.rr_graph);
     route_ctx.is_clock_net = load_is_clock_net();
     route_ctx.route_bb = load_route_bb(bb_factor);
-    route_ctx.rr_blk_source = load_rr_clb_sources(device_ctx.rr_node_indices);
+    route_ctx.rr_blk_source = load_rr_clb_sources(device_ctx.rr_graph);
     route_ctx.clb_opins_used_locally = alloc_and_load_clb_opins_used_locally();
     route_ctx.net_status.resize(cluster_ctx.clb_nlist.nets().size());
 }
@@ -966,7 +969,7 @@ void reset_rr_node_route_structs() {
 /* Allocates and loads the route_ctx.net_rr_terminals data structure. For each net it stores the rr_node   *
  * index of the SOURCE of the net and all the SINKs of the net [clb_nlist.nets()][clb_nlist.net_pins()].    *
  * Entry [inet][pnum] stores the rr index corresponding to the SOURCE (opin) or SINK (ipin) of the pin.     */
-static vtr::vector<ClusterNetId, std::vector<int>> load_net_rr_terminals(const t_rr_node_indices& L_rr_node_indices) {
+static vtr::vector<ClusterNetId, std::vector<int>> load_net_rr_terminals(const RRGraphView& rr_graph) {
     vtr::vector<ClusterNetId, std::vector<int>> net_rr_terminals;
 
     auto& cluster_ctx = g_vpr_ctx.clustering();
@@ -993,9 +996,9 @@ static vtr::vector<ClusterNetId, std::vector<int>> load_net_rr_terminals(const t
 
             int iclass = type->pin_class[phys_pin];
 
-            int inode = get_rr_node_index(L_rr_node_indices, i, j, (pin_count == 0 ? SOURCE : SINK), /* First pin is driver */
-                                          iclass);
-            net_rr_terminals[net_id][pin_count] = inode;
+            RRNodeId inode = rr_graph.node_lookup().find_node(i, j, (pin_count == 0 ? SOURCE : SINK), /* First pin is driver */
+                                                              iclass);
+            net_rr_terminals[net_id][pin_count] = size_t(inode);
             pin_count++;
         }
     }
@@ -1008,10 +1011,10 @@ static vtr::vector<ClusterNetId, std::vector<int>> load_net_rr_terminals(const t
  * they are used only to reserve pins for locally used OPINs in the router. *
  * [0..cluster_ctx.clb_nlist.blocks().size()-1][0..num_class-1].            *
  * The values for blocks that are padsare NOT valid.                        */
-static vtr::vector<ClusterBlockId, std::vector<int>> load_rr_clb_sources(const t_rr_node_indices& L_rr_node_indices) {
+static vtr::vector<ClusterBlockId, std::vector<int>> load_rr_clb_sources(const RRGraphView& rr_graph) {
     vtr::vector<ClusterBlockId, std::vector<int>> rr_blk_source;
 
-    int i, j, iclass, inode;
+    int i, j, iclass;
     t_rr_type rr_type;
 
     auto& cluster_ctx = g_vpr_ctx.clustering();
@@ -1036,8 +1039,8 @@ static vtr::vector<ClusterBlockId, std::vector<int>> load_rr_clb_sources(const t
                 else
                     rr_type = SINK;
 
-                inode = get_rr_node_index(L_rr_node_indices, i, j, rr_type, iclass);
-                rr_blk_source[blk_id][iclass] = inode;
+                RRNodeId inode = rr_graph.node_lookup().find_node(i, j, rr_type, iclass);
+                rr_blk_source[blk_id][iclass] = size_t(inode);
             } else {
                 rr_blk_source[blk_id][iclass] = OPEN;
             }
@@ -1453,9 +1456,10 @@ static void adjust_one_rr_occ_and_acc_cost(int inode, int add_or_sub, float acc_
 
     auto& route_ctx = g_vpr_ctx.mutable_routing();
     auto& device_ctx = g_vpr_ctx.device();
+    const auto& rr_graph = device_ctx.rr_graph;
 
     int new_occ = route_ctx.rr_node_route_inf[inode].occ() + add_or_sub;
-    int capacity = device_ctx.rr_nodes[inode].capacity();
+    int capacity = rr_graph.node_capacity(RRNodeId(inode));
     route_ctx.rr_node_route_inf[inode].set_occ(new_occ);
 
     if (new_occ < capacity) {
@@ -1512,7 +1516,7 @@ void print_traceback(const t_trace* trace) {
             VTR_LOG("*"); //Reached non-configurably
         }
 
-        if (route_ctx.rr_node_route_inf[inode].occ() > device_ctx.rr_nodes[inode].capacity()) {
+        if (route_ctx.rr_node_route_inf[inode].occ() > rr_graph.node_capacity(RRNodeId(inode))) {
             VTR_LOG(" x"); //Overused
         }
         VTR_LOG("\n");
@@ -1587,6 +1591,7 @@ bool validate_traceback_recurr(t_trace* trace, std::set<int>& seen_rr_nodes) {
 //Print information about an invalid routing, caused by overused routing resources
 void print_invalid_routing_info() {
     auto& device_ctx = g_vpr_ctx.device();
+    const auto& rr_graph = device_ctx.rr_graph;
     auto& cluster_ctx = g_vpr_ctx.clustering();
     auto& route_ctx = g_vpr_ctx.routing();
 
@@ -1604,7 +1609,7 @@ void print_invalid_routing_info() {
 
     for (size_t inode = 0; inode < device_ctx.rr_nodes.size(); inode++) {
         int occ = route_ctx.rr_node_route_inf[inode].occ();
-        int cap = device_ctx.rr_nodes[inode].capacity();
+        int cap = rr_graph.node_capacity(RRNodeId(inode));
         if (occ > cap) {
             VTR_LOG("  %s is overused (occ=%d capacity=%d)\n", describe_rr_node(inode).c_str(), occ, cap);
 
@@ -1641,13 +1646,14 @@ void print_rr_node_route_inf() {
 void print_rr_node_route_inf_dot() {
     auto& route_ctx = g_vpr_ctx.routing();
     auto& device_ctx = g_vpr_ctx.device();
+    const auto& rr_graph = device_ctx.rr_graph;
 
     VTR_LOG("digraph G {\n");
     VTR_LOG("\tnode[shape=record]\n");
     for (size_t inode = 0; inode < route_ctx.rr_node_route_inf.size(); ++inode) {
         if (!std::isinf(route_ctx.rr_node_route_inf[inode].path_cost)) {
             VTR_LOG("\tnode%zu[label=\"{%zu (%s)", inode, inode, device_ctx.rr_nodes[inode].type_string());
-            if (route_ctx.rr_node_route_inf[inode].occ() > device_ctx.rr_nodes[inode].capacity()) {
+            if (route_ctx.rr_node_route_inf[inode].occ() > rr_graph.node_capacity(RRNodeId(inode))) {
                 VTR_LOG(" x");
             }
             VTR_LOG("}\"]\n");

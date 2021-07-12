@@ -71,10 +71,6 @@ inline t_rr_node t_rr_graph_storage::back() {
     return t_rr_node(this, RRNodeId(size() - 1));
 }
 
-/*inline t_rr_type t_rr_node::type() const { // No longer used
-    return storage_->node_type(id_);
-}*/
-
 inline t_edge_size t_rr_node::num_edges() const {
     return storage_->num_edges(id_);
 }
@@ -123,10 +119,6 @@ inline short t_rr_node::yhigh() const {
     return storage_->node_yhigh(id_);
 }
 
-inline short t_rr_node::capacity() const {
-    return storage_->node_capacity(id_);
-}
-
 inline short t_rr_node::ptc_num() const {
     return storage_->node_ptc_num(id_);
 }
@@ -149,10 +141,6 @@ inline short t_rr_node::cost_index() const {
 
 inline short t_rr_node::rc_index() const {
     return storage_->node_rc_index(id_);
-}
-
-inline e_direction t_rr_node::direction() const {
-    return storage_->node_direction(id_);
 }
 
 inline bool t_rr_node::is_node_on_specific_side(e_side side) const {
